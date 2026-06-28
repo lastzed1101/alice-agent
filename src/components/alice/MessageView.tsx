@@ -8,11 +8,27 @@ import { ToolCallLine } from "./ToolCallLine";
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
-  const copy = useCallback(() => {
-    navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); });
+  const copy = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }
   }, [text]);
   return (
-    <button className="copy-btn" onClick={copy}>
+    <button type="button" className="copy-btn" onClick={copy}>
       {copied ? "Copied!" : "Copy"}
     </button>
   );
@@ -55,14 +71,14 @@ export function MessageView({ msg, live }: { msg: Message; live?: boolean }) {
             components={{
               code({ className, children, ...props }: any) {
                 const match = /language-(\w+)/.exec(className || "");
-                const codeStr = String(children).replace(/\n$/, "");
+                const codeStr = (Array.isArray(children) ? children.join("") : String(children)).replace(/\n$/, "");
                 if (match) {
                   return (
                     <div className="alice-code-block">
                       <span className="lang-label">{match[1]}</span>
                       <CopyButton text={codeStr} />
-                      <pre className={className}>
-                        <code>{children}</code>
+                      <pre>
+                        <code className={className}>{children}</code>
                       </pre>
                     </div>
                   );
