@@ -157,36 +157,7 @@
   z-index: 2;
 }
 
-/* ===== Syntax highlighting (dark) ===== */
-.hljs {
-  color: #ECECEC;
-  background: transparent;
-}
-.hljs-keyword { color: #FF7B72; }
-.hljs-string { color: #A5D6FF; }
-.hljs-number { color: #79C0FF; }
-.hljs-comment { color: #8B949E; font-style: italic; }
-.hljs-function { color: #D2A8FF; }
-.hljs-title { color: #D2A8FF; }
-.hljs-built_in { color: #FFA657; }
-.hljs-type { color: #FFA657; }
-.hljs-attr { color: #79C0FF; }
-.hljs-attribute { color: #79C0FF; }
-.hljs-literal { color: #79C0FF; }
-.hljs-punctuation { color: #8E8EA0; }
-.hljs-tag { color: #FF7B72; }
-.hljs-name { color: #FF7B72; }
-.hljs-selector-class { color: #D2A8FF; }
-.hljs-selector-id { color: #FF7B72; }
-.hljs-regexp { color: #A5D6FF; }
-.hljs-template-variable { color: #FFA657; }
-.hljs-variable { color: #FFA657; }
-.hljs-meta { color: #8B949E; }
-.hljs-deletion { color: #FF7B72; }
-.hljs-addition { color: #7EE787; }
-.hljs-section { color: #FF7B72; font-weight: bold; }
-.hljs-link { color: #79C0FF; text-decoration: underline; }
-.hljs-params { color: #ECECEC; }
+/* ===== Syntax highlighting — handled by Shiki inline styles ===== */
 
 /* ===== Inline code ===== */
 .alice-inline-code {
