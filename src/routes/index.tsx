@@ -17,8 +17,7 @@ import { runAgent } from "@/lib/alice/agent";
 import { parseSchedule, TOOLS } from "@/lib/alice/tools";
 import { startScheduler } from "@/lib/alice/scheduler";
 import { pullFromCloud, schedulePush } from "@/lib/alice/cloudSync";
-import { PanelLeft, Brain, Sparkles, Clock, Plus, MessageSquare, X } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { PanelLeft, X } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -200,7 +199,7 @@ function AlicePage() {
         onMobileClose={() => setSidebarOpen(false)}
       />
 
-      <div className="flex flex-1 flex-col min-w-0">
+      <div className="flex flex-1 flex-col min-w-0 pb-0">
         {/* === HEADER (always visible) === */}
         <header className="flex items-center gap-2 border-b border-border bg-[#171717] px-3 py-2 shrink-0">
           <button onClick={() => setSidebarOpen(true)} className="md:hidden text-muted-foreground hover:text-foreground p-1 -ml-1" aria-label="Open sidebar">
@@ -231,7 +230,7 @@ function AlicePage() {
         {/* === BODY: chat + right panel === */}
         <div className="flex flex-1 min-h-0">
           {/* Chat scroll area */}
-      <div className="flex flex-1 flex-col min-w-0 pb-[56px] md:pb-0">
+      <div className="flex flex-1 flex-col min-w-0">
             <div ref={scrollRef} className="flex-1 overflow-y-auto">
               <div className="mx-auto max-w-3xl px-4 py-6 space-y-5">
                 {!active || active.messages.length === 0 ? (
@@ -305,39 +304,11 @@ function AlicePage() {
         )}
       </div>
 
-      {/* === MOBILE BOTTOM NAV === */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-[#171717]" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
-        <div className="flex items-center justify-around py-1.5">
-          <MobileNavBtn icon={<MessageSquare className="h-5 w-5" />} label="Chats" active={panel === "chats" && !mobilePanelOpen} onClick={() => { setPanel("chats"); setMobilePanelOpen(null); }} />
-          <MobileNavBtn icon={<Brain className="h-5 w-5" />} label="Memory" active={mobilePanelOpen === "memory"} onClick={() => { setPanel("memory"); setMobilePanelOpen("memory"); }} />
-          <MobileNavBtn icon={<Plus className="h-5 w-5" />} label="New" active={false} onClick={newChat} highlight />
-          <MobileNavBtn icon={<Sparkles className="h-5 w-5" />} label="Skills" active={mobilePanelOpen === "skills"} onClick={() => { setPanel("skills"); setMobilePanelOpen("skills"); }} />
-          <MobileNavBtn icon={<Clock className="h-5 w-5" />} label="Tasks" active={mobilePanelOpen === "tasks"} onClick={() => { setPanel("tasks"); setMobilePanelOpen("tasks"); }} />
-        </div>
-      </nav>
+      {/* === MOBILE BOTTOM NAV — removed, buttons moved to sidebar drawer === */}
 
       <Toaster theme="dark" position="top-center" />
     </div>
   );
 }
 
-function MobileNavBtn({ icon, label, active, onClick, highlight }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void; highlight?: boolean }) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "flex flex-col items-center gap-0.5 px-3 py-1 text-[10px] transition-colors rounded-md min-w-[56px]",
-        highlight
-          ? "text-primary"
-          : active
-            ? "text-foreground"
-            : "text-muted-foreground hover:text-foreground",
-      )}
-    >
-      <div className={cn(highlight && "rounded-full bg-primary/20 p-1.5 -mt-1")}>
-        {icon}
-      </div>
-      <span>{label}</span>
-    </button>
-  );
-}
+
