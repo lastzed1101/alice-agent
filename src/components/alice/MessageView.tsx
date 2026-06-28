@@ -1,5 +1,6 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
 import { useState, useCallback } from "react";
 import type { Message } from "@/lib/alice/types";
 import { ThinkingPanel } from "./ThinkingPanel";
@@ -50,6 +51,7 @@ export function MessageView({ msg, live }: { msg: Message; live?: boolean }) {
         >
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
+            rehypePlugins={[rehypeHighlight]}
             components={{
               code({ className, children, ...props }: any) {
                 const match = /language-(\w+)/.exec(className || "");
@@ -68,6 +70,13 @@ export function MessageView({ msg, live }: { msg: Message; live?: boolean }) {
                 return <code className="alice-inline-code" {...props}>{children}</code>;
               },
               pre({ children }: any) { return <>{children}</>; },
+              table({ children }: any) {
+                return (
+                  <div className="alice-table-wrapper">
+                    <table>{children}</table>
+                  </div>
+                );
+              },
             }}
           >
             {msg.content}

@@ -45,8 +45,8 @@
 
 :root {
   --radius: 0.75rem;
-  /* ChatGPT-inspired dark theme — deeper black bg */
-  --background: #1A1A1A;
+  /* OpenAI-style dark theme */
+  --background: #171717;
   --foreground: #ECECEC;
   --card: #212121;
   --card-foreground: #ECECEC;
@@ -92,49 +92,82 @@
   }
 }
 
-/* ===== Code blocks (ChatGPT-style) ===== */
+/* ===== Code blocks (OpenAI-style) ===== */
 .alice-code-block {
   position: relative;
-  margin: 8px 0;
+  margin: 10px 0;
   border-radius: 8px;
   background: #111111;
-  border: 1px solid var(--color-border);
+  border: 1px solid #3a3a3a;
   overflow: hidden;
 }
 .alice-code-block pre {
   overflow-x: auto;
-  padding: 14px 16px;
+  padding: 16px;
   margin: 0;
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 1.6;
   background: transparent !important;
+  scrollbar-width: thin;
 }
 .alice-code-block .copy-btn {
   position: absolute;
   top: 8px;
   right: 8px;
-  padding: 4px 8px;
+  padding: 4px 10px;
   font-size: 11px;
   color: #8E8EA0;
   background: #2F2F2F;
-  border: 1px solid #424242;
-  border-radius: 4px;
+  border: 1px solid #3a3a3a;
+  border-radius: 5px;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s;
+  transition: background 0.15s;
+  z-index: 2;
 }
-.alice-code-block:hover .copy-btn {
-  opacity: 1;
+.alice-code-block .copy-btn:hover {
+  background: #3a3a3a;
+  color: #ECECEC;
 }
 .alice-code-block .lang-label {
   position: absolute;
   top: 8px;
   left: 12px;
-  font-size: 11px;
-  color: #8E8EA0;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  font-size: 10px;
+  color: #5C5C5C;
+  user-select: none;
+  z-index: 2;
 }
+
+/* ===== Syntax highlighting (dark) ===== */
+.hljs {
+  color: #ECECEC;
+  background: transparent;
+}
+.hljs-keyword { color: #FF7B72; }
+.hljs-string { color: #A5D6FF; }
+.hljs-number { color: #79C0FF; }
+.hljs-comment { color: #8B949E; font-style: italic; }
+.hljs-function { color: #D2A8FF; }
+.hljs-title { color: #D2A8FF; }
+.hljs-built_in { color: #FFA657; }
+.hljs-type { color: #FFA657; }
+.hljs-attr { color: #79C0FF; }
+.hljs-attribute { color: #79C0FF; }
+.hljs-literal { color: #79C0FF; }
+.hljs-punctuation { color: #8E8EA0; }
+.hljs-tag { color: #FF7B72; }
+.hljs-name { color: #FF7B72; }
+.hljs-selector-class { color: #D2A8FF; }
+.hljs-selector-id { color: #FF7B72; }
+.hljs-regexp { color: #A5D6FF; }
+.hljs-template-variable { color: #FFA657; }
+.hljs-variable { color: #FFA657; }
+.hljs-meta { color: #8B949E; }
+.hljs-deletion { color: #FF7B72; }
+.hljs-addition { color: #7EE787; }
+.hljs-section { color: #FF7B72; font-weight: bold; }
+.hljs-link { color: #79C0FF; text-decoration: underline; }
+.hljs-params { color: #ECECEC; }
 
 /* ===== Inline code ===== */
 .alice-inline-code {
@@ -144,6 +177,29 @@
   border-radius: 4px;
   font-size: 0.875em;
   font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* ===== Tables (scroll on narrow screens) ===== */
+.alice-table-wrapper {
+  overflow-x: auto;
+  margin: 10px 0;
+  scrollbar-width: thin;
+}
+.alice-table-wrapper table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.alice-table-wrapper th,
+.alice-table-wrapper td {
+  border: 1px solid #3a3a3a;
+  padding: 8px 12px;
+  text-align: left;
+  white-space: nowrap;
+}
+.alice-table-wrapper th {
+  background: #212121;
+  font-weight: 600;
 }
 
 /* ===== Animations ===== */
