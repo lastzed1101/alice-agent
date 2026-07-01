@@ -20,7 +20,7 @@ import * as dns from "node:dns/promises";
 
 const PORT = Number(process.env.ALICE_AGENT_PORT) || 3020;
 const ALLOWED_ORIGINS =
-  process.env.ALICE_ORIGINS || "http://localhost:3000,http://localhost:5173,http://localhost:8080";
+  process.env.ALICE_ORIGINS || "http://localhost:3000,http://localhost:5173,http://localhost:8080,http://localhost:8082";
 
 // ~/.alice/ config directory for persistent storage
 const ALICE_DIR = path.join(os.homedir(), ".alice");

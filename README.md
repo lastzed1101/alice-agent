@@ -49,14 +49,21 @@ git clone https://github.com/Z-E-D1101/alice-agent.git
 cd alice-agent
 npm install
 cp .env.example .env       # Edit .env sesuai kebutuhan
-npm run dev:all              # Frontend + Agent server (parallel)
+
+# Jalankan via CLI (recommended) — start kedua server + buka browser
+alice
+
+# Atau via npm scripts — manual, port default
+npm run dev:all
 ```
 
 ### Perintah CLI
 
 ```bash
-alice                        # Jalankan Alice (buka browser otomatis)
-alice -p 4000                # Jalankan di port custom
+alice                        # Jalankan Alice (buka browser ke localhost:8082)
+alice -p 4000                # Agent server di port 4000 (frontend tetap 8082)
+alice -f 5173                # Frontend di port 5173 (agent tetap 3020)
+alice -p 4000 -f 5173        # Custom kedua port
 alice --no-open              # Tanpa buka browser
 alice --help                 # Lihat bantuan
 ```
@@ -73,9 +80,14 @@ Semua konfigurasi tersimpan di `~/.alice/`:
 
 Browser-side data (providers, settings) tersimpan di **localStorage** browser dan otomatis persist reload.
 
-Aplikasi akan berjalan di:
-- **Frontend**: http://localhost:5173
-- **Agent Server**: http://localhost:3020
+Aplikasi akan berjalan di **dual-port** architecture:
+
+| Service | URL | Fungsi |
+|---------|-----|--------|
+| **Frontend (UI)** | http://localhost:8082 | Chat UI, Settings, Threads |
+| **Agent Server (API)** | http://localhost:3020 | Backend API (shell, filesystem, code exec) |
+
+Browser otomatis dibuka ke `http://localhost:8082`.
 
 ### Konfigurasi (.env)
 
@@ -87,7 +99,10 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 # === Agent Server ===
 ALICE_AGENT_PORT=3020
-ALICE_ORIGINS=http://localhost:5173,http://localhost:3000
+ALICE_ORIGINS=http://localhost:8082,http://localhost:3020,http://localhost:5173,http://localhost:3000
+
+# === Frontend ===
+VITE_ALICE_AGENT_PORT=3020    # Port agent server untuk frontend
 
 # === Cloud Sync (opsional) ===
 SUPABASE_URL=https://your-project.supabase.co
@@ -296,8 +311,13 @@ Customizable di Settings.
 ### Scripts
 
 ```bash
-npm run dev          # Frontend dev server (http://localhost:5173)
-npm run dev:agent    # Agent backend server (http://localhost:3020)
+# Via CLI (recommended) — start agent server (3020) + frontend (8082) + buka browser
+alice
+alice -p 4000 -f 5173  # Custom ports
+
+# Via npm scripts
+npm run dev          # Frontend only (Vite dev server)
+npm run dev:agent    # Agent backend only (port 3020)
 npm run dev:all      # Frontend + Agent server (parallel)
 npm run build        # Build production
 npm run lint         # ESLint
@@ -307,13 +327,25 @@ npm run format       # Prettier
 ### Architecture
 
 ```
-Frontend (React + TanStack Start)
-        ↕
-  localStorage + Cloud Sync (Supabase)
-        ↕
-  Agent Server (Node.js HTTP API)
-        ↕
-  AI Providers (OpenAI / OpenRouter / Anthropic)
+┌─────────────────────────────────────────────────────┐
+│  alice CLI (alice-cli.js)                           │
+│                                                     │
+│  ┌──────────────┐     ┌──────────────────────────┐ │
+│  │ Frontend      │     │ Agent Server              │ │
+│  │ (Vite/React)  │     │ (Node.js HTTP API)        │ │
+│  │ Port 8082     │────▶│ Port 3020                  │ │
+│  └──────┬───────┘     └──────────┬───────────────┘ │
+│         │                        │                  │
+│         │  HTTP API calls        │  Shell/Filesystem │
+│         ▼                        ▼                  │
+│  ┌──────────┐            ┌──────────────┐           │
+│  │ Browser   │            │ AI Providers  │           │
+│  │ (UI)      │            │ OpenAI, etc.  │           │
+│  └──────────┘            └──────────────┘           │
+│         │                        │                  │
+│         └──── localStorage ──────┘                  │
+│              + Cloud Sync (Supabase)                │
+└─────────────────────────────────────────────────────┘
 ```
 
 Agent loop:
@@ -342,6 +374,39 @@ src/
 └── integrations/supabase/
 agent-server.ts          # Backend HTTP server
 ```
+
+## 🗑️ Uninstall
+
+### Hapus command global
+
+```bash
+npm unlink -g alice        # Jika install via npm link
+# atau
+npm uninstall -g alice     # Jika install via npm install -g
+```
+
+### Hapus data dan konfigurasi
+
+```bash
+rm -rf ~/.alice             # Hapus semua data persisten (threads, memory, skills, dll)
+```
+
+### Hapus project
+
+```bash
+rm -rf /path/to/alice-agent         # Hapus folder project
+npm cache clean --force              # Bersihkan npm cache (opsional)
+```
+
+### Hapus environment
+
+Hapus `.env` file di folder project jika ada:
+
+```bash
+rm /path/to/alice-agent/.env
+```
+
+> ⚠️ **Note:** Menghapus `~/.alice/` akan menghapus semua data persisten Alice (threads, memory, skills, tasks, providers, settings). Pastikan sudah backup jika diperlukan.
 
 ## 📝 License
 
