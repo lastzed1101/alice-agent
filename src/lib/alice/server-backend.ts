@@ -135,7 +135,9 @@ export const executePython = createServerFn({ method: "POST" })
         exitCode: e.status ?? 1,
       } satisfies ExecResult;
     } finally {
-      try { fs.unlinkSync(tmpFile); } catch {}
+      try {
+        fs.unlinkSync(tmpFile);
+      } catch {}
     }
   });
 
@@ -160,15 +162,16 @@ export const executeNode = createServerFn({ method: "POST" })
         exitCode: e.status ?? 1,
       } satisfies ExecResult;
     } finally {
-      try { fs.unlinkSync(tmpFile); } catch {}
+      try {
+        fs.unlinkSync(tmpFile);
+      } catch {}
     }
   });
 
 // ===== System =====
-export const getCwd = createServerFn({ method: "GET" })
-  .handler(async () => {
-    return process.cwd();
-  });
+export const getCwd = createServerFn({ method: "GET" }).handler(async () => {
+  return process.cwd();
+});
 
 export const getEnv = createServerFn({ method: "POST" })
   .validator((d: { key: string }) => d)
@@ -181,59 +184,59 @@ export const whichBin = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { execSync } = await import("node:child_process");
     try {
-      const result = execSync(`which ${data.name} 2>/dev/null || command -v ${data.name} 2>/dev/null`, {
-        encoding: "utf-8",
-        timeout: 5000,
-      });
+      const result = execSync(
+        `which ${data.name} 2>/dev/null || command -v ${data.name} 2>/dev/null`,
+        {
+          encoding: "utf-8",
+          timeout: 5000,
+        },
+      );
       return result.trim();
     } catch {
       return null;
     }
   });
 
-export const listProcesses = createServerFn({ method: "GET" })
-  .handler(async () => {
-    const { execSync } = await import("node:child_process");
+export const listProcesses = createServerFn({ method: "GET" }).handler(async () => {
+  const { execSync } = await import("node:child_process");
+  try {
+    return execSync("ps aux --sort=-%mem | head -50", { encoding: "utf-8", timeout: 5000 });
+  } catch {
     try {
-      return execSync("ps aux --sort=-%mem | head -50", { encoding: "utf-8", timeout: 5000 });
-    } catch {
-      try {
-        return execSync("ps aux | head -50", { encoding: "utf-8", timeout: 5000 });
-      } catch (e: any) {
-        return `ERROR: ${e.message}`;
+      return execSync("ps aux | head -50", { encoding: "utf-8", timeout: 5000 });
+    } catch (e: any) {
+      return `ERROR: ${e.message}`;
+    }
+  }
+});
+
+export const getSystemInfo = createServerFn({ method: "GET" }).handler(async () => {
+  const os = await import("node:os");
+  const parts: string[] = [
+    `Platform: ${os.platform()} ${os.release()}`,
+    `Hostname: ${os.hostname()}`,
+    `Arch: ${os.arch()}`,
+    `CPUs: ${os.cpus().length}`,
+    `Memory: ${Math.round((os.totalmem() / 1024 / 1024 / 1024) * 10) / 10} GB total, ${Math.round((os.freemem() / 1024 / 1024 / 1024) * 10) / 10} GB free`,
+    `Uptime: ${Math.round(os.uptime() / 3600)}h`,
+  ];
+  return parts.join("\n");
+});
+
+export const getNetworkInfo = createServerFn({ method: "GET" }).handler(async () => {
+  const os = await import("node:os");
+  const ifaces = os.networkInterfaces();
+  const parts: string[] = [];
+  for (const [name, addrs] of Object.entries(ifaces)) {
+    if (!addrs) continue;
+    for (const addr of addrs) {
+      if (addr.family === "IPv4" && !addr.internal) {
+        parts.push(`${name}: ${addr.address}`);
       }
     }
-  });
-
-export const getSystemInfo = createServerFn({ method: "GET" })
-  .handler(async () => {
-    const os = await import("node:os");
-    const parts: string[] = [
-      `Platform: ${os.platform()} ${os.release()}`,
-      `Hostname: ${os.hostname()}`,
-      `Arch: ${os.arch()}`,
-      `CPUs: ${os.cpus().length}`,
-      `Memory: ${Math.round((os.totalmem() / 1024 / 1024 / 1024) * 10) / 10} GB total, ${Math.round((os.freemem() / 1024 / 1024 / 1024) * 10) / 10} GB free`,
-      `Uptime: ${Math.round(os.uptime() / 3600)}h`,
-    ];
-    return parts.join("\n");
-  });
-
-export const getNetworkInfo = createServerFn({ method: "GET" })
-  .handler(async () => {
-    const os = await import("node:os");
-    const ifaces = os.networkInterfaces();
-    const parts: string[] = [];
-    for (const [name, addrs] of Object.entries(ifaces)) {
-      if (!addrs) continue;
-      for (const addr of addrs) {
-        if (addr.family === "IPv4" && !addr.internal) {
-          parts.push(`${name}: ${addr.address}`);
-        }
-      }
-    }
-    return parts.join("\n") || "No non-internal IPv4 addresses found";
-  });
+  }
+  return parts.join("\n") || "No non-internal IPv4 addresses found";
+});
 
 export const dnsResolve = createServerFn({ method: "POST" })
   .validator((d: { hostname: string }) => d)
@@ -290,7 +293,9 @@ export const grepSearch = createServerFn({ method: "POST" })
   });
 
 export const httpRequest = createServerFn({ method: "POST" })
-  .validator((d: { url: string; method?: string; headers?: Record<string, string>; body?: string }) => d)
+  .validator(
+    (d: { url: string; method?: string; headers?: Record<string, string>; body?: string }) => d,
+  )
   .handler(async ({ data }) => {
     const resp = await fetch(data.url, {
       method: data.method || "GET",
@@ -299,6 +304,8 @@ export const httpRequest = createServerFn({ method: "POST" })
     });
     const body = await resp.text();
     const headers: Record<string, string> = {};
-    resp.headers.forEach((v, k) => { headers[k] = v; });
+    resp.headers.forEach((v, k) => {
+      headers[k] = v;
+    });
     return { status: resp.status, body, headers };
   });

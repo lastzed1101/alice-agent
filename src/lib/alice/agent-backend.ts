@@ -32,7 +32,7 @@ async function callApi<T>(route: string, body?: unknown): Promise<T> {
       signal: AbortSignal.timeout(60000),
     });
     if (!resp.ok) throw new Error(`agent server ${resp.status}`);
-    return await resp.json() as T;
+    return (await resp.json()) as T;
   } catch (e) {
     if (!fallbackMode) {
       warnOnce(`Agent server unreachable (${(e as Error).message}), falling back to SSR mode`);
@@ -45,7 +45,11 @@ async function callApi<T>(route: string, body?: unknown): Promise<T> {
 // Normalize any value to ExecResult format
 function toExecResult(val: any): { stdout: string; stderr: string; exitCode: number } {
   if (val && typeof val === "object" && "stdout" in val) {
-    return { stdout: String(val.stdout ?? ""), stderr: String(val.stderr ?? ""), exitCode: Number(val.exitCode ?? 0) };
+    return {
+      stdout: String(val.stdout ?? ""),
+      stderr: String(val.stderr ?? ""),
+      exitCode: Number(val.exitCode ?? 0),
+    };
   }
   return { stdout: val != null ? String(val) : "", stderr: "", exitCode: 0 };
 }
@@ -56,7 +60,11 @@ async function callServerFn<T>(route: string, body?: unknown): Promise<T> {
   switch (route) {
     case "shell/run":
     case "shell/exec":
-      return toExecResult(await server.runShell({ data: { command: b?.command || "", timeout: b?.timeout || 30000, cwd: b?.cwd } })) as T;
+      return toExecResult(
+        await server.runShell({
+          data: { command: b?.command || "", timeout: b?.timeout || 30000, cwd: b?.cwd },
+        }),
+      ) as T;
 
     case "shell/processes": {
       const r = await server.listProcesses();
@@ -97,8 +105,13 @@ async function callServerFn<T>(route: string, body?: unknown): Promise<T> {
     case "fs/stat": {
       const s = await server.fileStat({ data: { path: b?.path || "" } });
       return {
-        path: s.path, size: s.size, isFile: s.isFile, isDir: s.isDir, mtimeMs: s.mtimeMs,
-        birthtimeMs: 0, mode: 0,
+        path: s.path,
+        size: s.size,
+        isFile: s.isFile,
+        isDir: s.isDir,
+        mtimeMs: s.mtimeMs,
+        birthtimeMs: 0,
+        mode: 0,
       } as T;
     }
 
@@ -113,7 +126,9 @@ async function callServerFn<T>(route: string, body?: unknown): Promise<T> {
     }
 
     case "fs/mkdir": {
-      await server.makeDirectory({ data: { path: b?.path || "", recursive: b?.recursive ?? true } });
+      await server.makeDirectory({
+        data: { path: b?.path || "", recursive: b?.recursive ?? true },
+      });
       return { path: b?.path } as T;
     }
 
@@ -130,26 +145,46 @@ async function callServerFn<T>(route: string, body?: unknown): Promise<T> {
     }
 
     case "fs/glob": {
-      const re = new RegExp("^" + String(b?.pattern || "").replace(/\*\*/g, ".*").replace(/\*/g, "[^/]*").replace(/\?/g, ".") + "$");
+      const re = new RegExp(
+        "^" +
+          String(b?.pattern || "")
+            .replace(/\*\*/g, ".*")
+            .replace(/\*/g, "[^/]*")
+            .replace(/\?/g, ".") +
+          "$",
+      );
       const dir = b?.cwd || ".";
       const r = await server.grepSearch({ data: { pattern: ".*", path: dir, maxResults: 5000 } });
-      const files = (r as Array<{ path: string }>).map(x => x.path);
+      const files = (r as Array<{ path: string }>).map((x) => x.path);
       return files.filter((f: string) => re.test(f)).slice(0, 200) as T;
     }
 
     case "fs/disk-usage": {
-      const r = toExecResult(await server.runShell({ data: { command: `du -sh "${b?.path || "."}" 2>/dev/null; echo "---"; df -h "${b?.path || "."}" 2>/dev/null`, timeout: 10000 } }));
+      const r = toExecResult(
+        await server.runShell({
+          data: {
+            command: `du -sh "${b?.path || "."}" 2>/dev/null; echo "---"; df -h "${b?.path || "."}" 2>/dev/null`,
+            timeout: 10000,
+          },
+        }),
+      );
       return r as T;
     }
 
     case "code/python":
-      return toExecResult(await server.executePython({ data: { code: b?.code || "", timeout: b?.timeout || 30000 } })) as T;
+      return toExecResult(
+        await server.executePython({ data: { code: b?.code || "", timeout: b?.timeout || 30000 } }),
+      ) as T;
 
     case "code/node":
-      return toExecResult(await server.executeNode({ data: { code: b?.code || "", timeout: b?.timeout || 30000 } })) as T;
+      return toExecResult(
+        await server.executeNode({ data: { code: b?.code || "", timeout: b?.timeout || 30000 } }),
+      ) as T;
 
     case "code/bash":
-      return toExecResult(await server.runShell({ data: { command: b?.code || "", timeout: b?.timeout || 30000 } })) as T;
+      return toExecResult(
+        await server.runShell({ data: { command: b?.code || "", timeout: b?.timeout || 30000 } }),
+      ) as T;
 
     case "system/info": {
       const str = await server.getSystemInfo();
@@ -181,8 +216,11 @@ async function callServerFn<T>(route: string, body?: unknown): Promise<T> {
     }
 
     case "system/dns": {
-      try { return (await server.dnsResolve({ data: { hostname: b?.hostname || "" } })) as T; }
-      catch { return ["ERROR: could not resolve"] as T; }
+      try {
+        return (await server.dnsResolve({ data: { hostname: b?.hostname || "" } })) as T;
+      } catch {
+        return ["ERROR: could not resolve"] as T;
+      }
     }
 
     case "system/env":
@@ -192,7 +230,9 @@ async function callServerFn<T>(route: string, body?: unknown): Promise<T> {
       return (await server.getCwd()) as T;
 
     case "http/fetch": {
-      const r = await server.httpRequest({ data: { url: b?.url || "", method: b?.method, headers: b?.headers, body: b?.body } });
+      const r = await server.httpRequest({
+        data: { url: b?.url || "", method: b?.method, headers: b?.headers, body: b?.body },
+      });
       return r as T;
     }
 
@@ -205,26 +245,44 @@ async function callServerFn<T>(route: string, body?: unknown): Promise<T> {
 export const agent = {
   shell: {
     run: (cmd: string, timeout?: number, cwd?: string) =>
-      callApi<{ stdout: string; stderr: string; exitCode: number }>("shell/run", { command: cmd, timeout, cwd }),
+      callApi<{ stdout: string; stderr: string; exitCode: number }>("shell/run", {
+        command: cmd,
+        timeout,
+        cwd,
+      }),
     exec: (cmd: string, timeout?: number, cwd?: string) =>
-      callApi<{ stdout: string; stderr: string; exitCode: number }>("shell/exec", { command: cmd, timeout, cwd }),
-    processes: () => callApi<{ stdout: string; stderr: string; exitCode: number }>("shell/processes"),
-    which: (name: string) => callApi<{ stdout: string; stderr: string; exitCode: number }>("shell/which", { name }),
+      callApi<{ stdout: string; stderr: string; exitCode: number }>("shell/exec", {
+        command: cmd,
+        timeout,
+        cwd,
+      }),
+    processes: () =>
+      callApi<{ stdout: string; stderr: string; exitCode: number }>("shell/processes"),
+    which: (name: string) =>
+      callApi<{ stdout: string; stderr: string; exitCode: number }>("shell/which", { name }),
   },
 
   fs: {
     read: (p: string) => callApi<string>("fs/read", { path: p }),
-    write: (p: string, content: string) => callApi<{ path: string; bytes: number }>("fs/write", { path: p, content }),
-    append: (p: string, content: string) => callApi<{ path: string }>("fs/append", { path: p, content }),
+    write: (p: string, content: string) =>
+      callApi<{ path: string; bytes: number }>("fs/write", { path: p, content }),
+    append: (p: string, content: string) =>
+      callApi<{ path: string }>("fs/append", { path: p, content }),
     delete: (p: string) => callApi<{ deleted: string }>("fs/delete", { path: p }),
-    list: (p: string) => callApi<Array<{ name: string; isFile: boolean; isDir: boolean }>>("fs/list", { path: p }),
+    list: (p: string) =>
+      callApi<Array<{ name: string; isFile: boolean; isDir: boolean }>>("fs/list", { path: p }),
     exists: (p: string) => callApi<boolean>("fs/exists", { path: p }),
     stat: (p: string) => callApi<any>("fs/stat", { path: p }),
     move: (from: string, to: string) => callApi<any>("fs/move", { from, to }),
     copy: (from: string, to: string) => callApi<any>("fs/copy", { from, to }),
     mkdir: (p: string, recursive?: boolean) => callApi<any>("fs/mkdir", { path: p, recursive }),
     grep: (pattern: string, dir?: string, include?: string, maxResults?: number) =>
-      callApi<Array<{ path: string; line: number; text: string }>>("fs/grep", { pattern, path: dir, include, maxResults }),
+      callApi<Array<{ path: string; line: number; text: string }>>("fs/grep", {
+        pattern,
+        path: dir,
+        include,
+        maxResults,
+      }),
     glob: (pattern: string, cwd?: string) => callApi<string[]>("fs/glob", { pattern, cwd }),
     diskUsage: (p?: string) =>
       callApi<{ stdout: string; stderr: string; exitCode: number }>("fs/disk-usage", { path: p }),
@@ -232,7 +290,10 @@ export const agent = {
 
   code: {
     python: (code: string, timeout?: number) =>
-      callApi<{ stdout: string; stderr: string; exitCode: number }>("code/python", { code, timeout }),
+      callApi<{ stdout: string; stderr: string; exitCode: number }>("code/python", {
+        code,
+        timeout,
+      }),
     node: (code: string, timeout?: number) =>
       callApi<{ stdout: string; stderr: string; exitCode: number }>("code/node", { code, timeout }),
     bash: (code: string, timeout?: number) =>
@@ -249,6 +310,11 @@ export const agent = {
 
   http: {
     fetch: (url: string, method?: string, headers?: Record<string, string>, body?: string) =>
-      callApi<{ status: number; body: string; headers: Record<string, string> }>("http/fetch", { url, method, headers, body }),
+      callApi<{ status: number; body: string; headers: Record<string, string> }>("http/fetch", {
+        url,
+        method,
+        headers,
+        body,
+      }),
   },
 };

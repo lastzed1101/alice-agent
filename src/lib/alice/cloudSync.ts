@@ -1,9 +1,23 @@
 import { supabase } from "@/integrations/supabase/client";
 import {
-  loadMemory, loadProfile, loadProviders, loadSettings, loadSkills,
-  loadTasks, loadThreads, loadActiveThreadId, loadVFS,
-  saveMemory, saveProfile, saveProviders, saveSettings, saveSkills,
-  saveTasks, saveThreads, saveActiveThreadId, saveVFS,
+  loadMemory,
+  loadProfile,
+  loadProviders,
+  loadSettings,
+  loadSkills,
+  loadTasks,
+  loadThreads,
+  loadActiveThreadId,
+  loadVFS,
+  saveMemory,
+  saveProfile,
+  saveProviders,
+  saveSettings,
+  saveSkills,
+  saveTasks,
+  saveThreads,
+  saveActiveThreadId,
+  saveVFS,
 } from "./storage";
 
 const ROW_ID = "default";
@@ -56,13 +70,14 @@ export async function pullFromCloud(): Promise<{ source: "cloud" | "local-seed" 
   if (error) throw error;
 
   const cloud = (data?.data ?? {}) as CloudBlob;
-  const hasCloud = Object.keys(cloud).length > 0 &&
+  const hasCloud =
+    Object.keys(cloud).length > 0 &&
     ((cloud.threads?.length ?? 0) > 0 ||
-     (cloud.memory?.length ?? 0) > 0 ||
-     (cloud.skills?.length ?? 0) > 0 ||
-     (cloud.tasks?.length ?? 0) > 0 ||
-     !!cloud.profile?.name ||
-     !!cloud.settings);
+      (cloud.memory?.length ?? 0) > 0 ||
+      (cloud.skills?.length ?? 0) > 0 ||
+      (cloud.tasks?.length ?? 0) > 0 ||
+      !!cloud.profile?.name ||
+      !!cloud.settings);
 
   if (hasCloud) {
     applyBlob(cloud);
@@ -78,7 +93,10 @@ let lastPushAt = 0;
 
 export function schedulePush(debounceMs = 800) {
   if (pendingTimer) clearTimeout(pendingTimer);
-  pendingTimer = setTimeout(() => { pendingTimer = null; void pushToCloud(); }, debounceMs);
+  pendingTimer = setTimeout(() => {
+    pendingTimer = null;
+    void pushToCloud();
+  }, debounceMs);
 }
 
 export async function pushToCloud() {
@@ -86,8 +104,13 @@ export async function pushToCloud() {
   lastPushAt = Date.now();
   const { error } = await supabase
     .from("app_state")
-    .upsert({ id: ROW_ID, data: blob as never, updated_at: new Date().toISOString() }, { onConflict: "id" });
+    .upsert(
+      { id: ROW_ID, data: blob as never, updated_at: new Date().toISOString() },
+      { onConflict: "id" },
+    );
   if (error) console.error("[cloudSync] push failed", error);
 }
 
-export function lastPush() { return lastPushAt; }
+export function lastPush() {
+  return lastPushAt;
+}

@@ -1,4 +1,13 @@
-import { loadActiveThreadId, loadProviders, loadSettings, loadTasks, loadThreads, saveTasks, saveThreads, uid } from "./storage";
+import {
+  loadActiveThreadId,
+  loadProviders,
+  loadSettings,
+  loadTasks,
+  loadThreads,
+  saveTasks,
+  saveThreads,
+  uid,
+} from "./storage";
 import { runAgent } from "./agent";
 import type { Thread } from "./types";
 
@@ -28,24 +37,40 @@ async function tick() {
     try {
       const settings = loadSettings();
       const providers = loadProviders();
-      const provider = providers.find(p => p.id === settings.activeProviderId);
-      if (!provider) { t.lastResult = "no active provider"; continue; }
-      if (!settings.activeModel) { t.lastResult = "no model selected"; continue; }
+      const provider = providers.find((p) => p.id === settings.activeProviderId);
+      if (!provider) {
+        t.lastResult = "no active provider";
+        continue;
+      }
+      if (!settings.activeModel) {
+        t.lastResult = "no model selected";
+        continue;
+      }
       // Create a fresh thread for this run
       const threads = loadThreads();
       const thread: Thread = {
-        id: uid(), title: `⏰ ${t.name}`, createdAt: now, updatedAt: now, messages: [],
+        id: uid(),
+        title: `⏰ ${t.name}`,
+        createdAt: now,
+        updatedAt: now,
+        messages: [],
       };
       threads.unshift(thread);
       const ac = new AbortController();
       await runAgent({
-        thread, userText: t.prompt, provider, model: settings.activeModel,
-        systemPrompt: settings.systemPrompt, searxngUrl: settings.searxngUrl,
-        temperature: settings.temperature, maxToolSteps: settings.maxToolSteps,
-        signal: ac.signal, onDelta: () => {},
+        thread,
+        userText: t.prompt,
+        provider,
+        model: settings.activeModel,
+        systemPrompt: settings.systemPrompt,
+        searxngUrl: settings.searxngUrl,
+        temperature: settings.temperature,
+        maxToolSteps: settings.maxToolSteps,
+        signal: ac.signal,
+        onDelta: () => {},
       });
       saveThreads(threads);
-      const last = thread.messages.filter(m => m.role === "assistant").pop();
+      const last = thread.messages.filter((m) => m.role === "assistant").pop();
       t.lastResult = last?.content?.slice(0, 200) ?? "done";
     } catch (e) {
       t.lastResult = `error: ${e instanceof Error ? e.message : String(e)}`;
@@ -56,10 +81,15 @@ async function tick() {
 
 export function startScheduler() {
   if (timer) return;
-  timer = setInterval(() => { void tick(); }, 5000);
+  timer = setInterval(() => {
+    void tick();
+  }, 5000);
 }
 export function stopScheduler() {
-  if (timer) { clearInterval(timer); timer = null; }
+  if (timer) {
+    clearInterval(timer);
+    timer = null;
+  }
 }
 
 // expose for ad-hoc usage

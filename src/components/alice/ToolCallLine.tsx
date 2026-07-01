@@ -7,11 +7,25 @@ import { cn } from "@/lib/utils";
 function shortArg(args: string, name: string): string {
   try {
     const j = JSON.parse(args || "{}") as Record<string, unknown>;
-    const order = ["path", "query", "command", "url", "expr", "key", "name", "from", "id", "pattern", "schedule"];
+    const order = [
+      "path",
+      "query",
+      "command",
+      "url",
+      "expr",
+      "key",
+      "name",
+      "from",
+      "id",
+      "pattern",
+      "schedule",
+    ];
     for (const k of order) if (k in j) return String(j[k]).slice(0, 80);
     const first = Object.values(j)[0];
     return first === undefined ? "" : String(first).slice(0, 80);
-  } catch { return ""; }
+  } catch {
+    return "";
+  }
 }
 
 const verbFor = (n: string) => {
@@ -33,7 +47,8 @@ export function ToolCallLine({ tc }: { tc: ToolCall }) {
   const def = TOOLS_BY_NAME[tc.name];
   const emoji = def?.emoji ?? "🔧";
   const arg = shortArg(tc.args, tc.name);
-  const dur = tc.endedAt && tc.startedAt ? ((tc.endedAt - tc.startedAt) / 1000).toFixed(1) + "s" : "";
+  const dur =
+    tc.endedAt && tc.startedAt ? ((tc.endedAt - tc.startedAt) / 1000).toFixed(1) + "s" : "";
 
   return (
     <div className="text-sm font-mono alice-fade-in">
@@ -48,11 +63,18 @@ export function ToolCallLine({ tc }: { tc: ToolCall }) {
           onClick={() => setOpen((o) => !o)}
           className="group flex w-full items-center gap-2 text-left transition-colors hover:text-foreground"
         >
-          <ChevronRight className={cn("h-3 w-3 transition-transform text-muted-foreground", open && "rotate-90")} />
+          <ChevronRight
+            className={cn(
+              "h-3 w-3 transition-transform text-muted-foreground",
+              open && "rotate-90",
+            )}
+          />
           <span>{emoji}</span>
           <span className="text-tool">{verbFor(tc.name)}</span>
           {arg && <span className="text-muted-foreground truncate">{arg}</span>}
-          {tc.status === "running" && <span className="text-muted-foreground alice-pulse">·running</span>}
+          {tc.status === "running" && (
+            <span className="text-muted-foreground alice-pulse">·running</span>
+          )}
           {tc.status === "error" && <span className="text-destructive">·error</span>}
           {dur && <span className="ml-auto text-xs text-muted-foreground">{dur}</span>}
         </button>
@@ -62,12 +84,21 @@ export function ToolCallLine({ tc }: { tc: ToolCall }) {
           {tc.args && (
             <div>
               <div className="text-xs text-muted-foreground">args</div>
-              <pre className="text-xs whitespace-pre-wrap break-all text-muted-foreground">{tc.args}</pre>
+              <pre className="text-xs whitespace-pre-wrap break-all text-muted-foreground">
+                {tc.args}
+              </pre>
             </div>
           )}
           <div>
-            <div className="text-xs text-muted-foreground">{tc.status === "error" ? "error" : "result"}</div>
-            <pre className={cn("text-xs whitespace-pre-wrap break-all max-h-64 overflow-auto", tc.status === "error" ? "text-destructive" : "text-foreground/80")}>
+            <div className="text-xs text-muted-foreground">
+              {tc.status === "error" ? "error" : "result"}
+            </div>
+            <pre
+              className={cn(
+                "text-xs whitespace-pre-wrap break-all max-h-64 overflow-auto",
+                tc.status === "error" ? "text-destructive" : "text-foreground/80",
+              )}
+            >
               {tc.result ?? ""}
             </pre>
           </div>

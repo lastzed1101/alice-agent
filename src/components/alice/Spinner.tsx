@@ -22,7 +22,11 @@ export function ThinkingSpinner({ label }: { label?: string }) {
     const a = setInterval(() => setFrame((f) => (f + 1) % SPINNER_FRAMES.length), 120);
     const b = setInterval(() => setFace((f) => (f + 1) % FACES.length), 1400);
     const c = setInterval(() => setHint((h) => (h + 1) % HINTS.length), 2400);
-    return () => { clearInterval(a); clearInterval(b); clearInterval(c); };
+    return () => {
+      clearInterval(a);
+      clearInterval(b);
+      clearInterval(c);
+    };
   }, []);
 
   return (

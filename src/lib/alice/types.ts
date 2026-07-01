@@ -3,7 +3,7 @@ export type Role = "system" | "user" | "assistant" | "tool";
 export interface ToolCall {
   id: string;
   name: string;
-  args: string; // raw JSON string as streamed
+  args: string;
   status: "preparing" | "running" | "done" | "error";
   result?: string;
   startedAt?: number;
@@ -14,11 +14,14 @@ export interface Message {
   id: string;
   role: Role;
   content: string;
-  reasoning?: string; // expandable thinking
+  reasoning?: string;
   toolCalls?: ToolCall[];
-  toolCallId?: string; // for role=tool
+  toolCallId?: string;
   toolName?: string;
   createdAt: number;
+  liked?: boolean;
+  disliked?: boolean;
+  edited?: boolean;
 }
 
 export interface Thread {
@@ -27,15 +30,20 @@ export interface Thread {
   createdAt: number;
   updatedAt: number;
   messages: Message[];
+  pinned?: boolean;
+  favorite?: boolean;
+  providerId?: string;
+  model?: string;
 }
 
 export interface ProviderConfig {
   id: string;
   name: string;
-  baseUrl: string; // OpenAI-compatible /v1
+  baseUrl: string;
   apiKey: string;
   models: string[];
   builtin?: boolean;
+  contextWindow?: number;
 }
 
 export interface AppSettings {
@@ -58,8 +66,10 @@ export interface Skill {
   id: string;
   name: string;
   description: string;
-  trigger: string; // when to use
-  steps: string;   // free-form instructions / template
+  trigger: string;
+  steps: string;
+  category?: string;
+  enabled?: boolean;
   createdAt: number;
 }
 
@@ -67,12 +77,12 @@ export interface ScheduledTask {
   id: string;
   name: string;
   prompt: string;
-  schedule: string; // human: "every 60m" | "daily 09:00"
+  schedule: string;
   intervalMs?: number;
   dailyAt?: string;
   nextRun: number;
-  enabled: boolean;
   lastRun?: number;
+  enabled: boolean;
   lastResult?: string;
 }
 
@@ -81,4 +91,28 @@ export interface UserProfile {
   about: string;
   preferences: string;
   updatedAt: number;
+}
+
+export interface KnowledgeFile {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  content: string;
+  tags: string[];
+  chunkCount: number;
+  indexedAt?: number;
+  createdAt: number;
+}
+
+export type AgentStatus = "idle" | "thinking" | "calling" | "searching" | "generating" | "completed" | "error";
+
+export interface ActivityStep {
+  id: string;
+  type: "planning" | "searching" | "reading" | "tool_call" | "reasoning" | "writing" | "done" | "error";
+  label: string;
+  detail?: string;
+  startTime: number;
+  endTime?: number;
+  status: "running" | "done" | "error";
 }

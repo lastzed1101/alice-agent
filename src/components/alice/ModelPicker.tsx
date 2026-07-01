@@ -1,7 +1,14 @@
 import { useState } from "react";
 import { Check, ChevronsUpDown, RefreshCw } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ProviderConfig } from "@/lib/alice/types";
@@ -9,7 +16,11 @@ import { discoverModels } from "@/lib/alice/agent";
 import { toast } from "sonner";
 
 export function ModelPicker({
-  providers, activeProviderId, activeModel, onChange, onRefresh,
+  providers,
+  activeProviderId,
+  activeModel,
+  onChange,
+  onRefresh,
 }: {
   providers: ProviderConfig[];
   activeProviderId: string;
@@ -28,10 +39,12 @@ export function ModelPicker({
       toast.success(`${p.name}: ${m.length} models`);
     } catch (e) {
       toast.error(`${p.name}: ${e instanceof Error ? e.message : String(e)}`);
-    } finally { setLoading(null); }
+    } finally {
+      setLoading(null);
+    }
   };
 
-  const activeProvider = providers.find(p => p.id === activeProviderId);
+  const activeProvider = providers.find((p) => p.id === activeProviderId);
   const label = activeModel
     ? `${activeProvider?.name ?? activeProviderId} · ${activeModel}`
     : "Choose model";
@@ -39,7 +52,11 @@ export function ModelPicker({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" role="combobox" className="h-9 justify-between gap-2 min-w-[260px]">
+        <Button
+          variant="outline"
+          role="combobox"
+          className="h-9 justify-between gap-2 min-w-[260px]"
+        >
           <span className="truncate">{label}</span>
           <ChevronsUpDown className="h-4 w-4 opacity-60" />
         </Button>
@@ -56,16 +73,20 @@ export function ModelPicker({
                   <div className="flex items-center justify-between gap-2 pr-1">
                     <span>{p.name}</span>
                     <button
-                      onClick={(e) => { e.preventDefault(); void refresh(p); }}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        void refresh(p);
+                      }}
                       className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
                       title="Discover models from /v1/models"
                     >
-                      <RefreshCw className={cn("h-3 w-3", loading === p.id && "animate-spin")} /> refresh
+                      <RefreshCw className={cn("h-3 w-3", loading === p.id && "animate-spin")} />{" "}
+                      refresh
                     </button>
                   </div>
                 }
               >
-                {p.models.length === 0 && (
+                {(p.models?.length || 0) === 0 && (
                   <CommandItem disabled className="text-xs text-muted-foreground">
                     no models — click refresh
                   </CommandItem>
@@ -76,7 +97,10 @@ export function ModelPicker({
                     <CommandItem
                       key={`${p.id}:${m}`}
                       value={`${p.name} ${m}`}
-                      onSelect={() => { onChange(p.id, m); setOpen(false); }}
+                      onSelect={() => {
+                        onChange(p.id, m);
+                        setOpen(false);
+                      }}
                     >
                       <Check className={cn("mr-2 h-4 w-4", active ? "opacity-100" : "opacity-0")} />
                       <span className="truncate">{m}</span>

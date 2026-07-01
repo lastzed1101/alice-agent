@@ -3,7 +3,17 @@ import { TOOLS_BY_NAME, toolsForApi } from "./tools";
 import { loadMemory, loadProfile, loadSkills, uid } from "./storage";
 
 export interface AgentDelta {
-  type: "text" | "reasoning" | "tool_call_start" | "tool_call_args" | "tool_call_run" | "tool_call_done" | "tool_call_error" | "assistant_done" | "iter" | "error";
+  type:
+    | "text"
+    | "reasoning"
+    | "tool_call_start"
+    | "tool_call_args"
+    | "tool_call_run"
+    | "tool_call_done"
+    | "tool_call_error"
+    | "assistant_done"
+    | "iter"
+    | "error";
   text?: string;
   toolCallId?: string;
   toolName?: string;
@@ -51,7 +61,11 @@ function buildContextSystem(base: string): string {
 interface ApiMsg {
   role: string;
   content: string | null;
-  tool_calls?: Array<{ id: string; type: "function"; function: { name: string; arguments: string } }>;
+  tool_calls?: Array<{
+    id: string;
+    type: "function";
+    function: { name: string; arguments: string };
+  }>;
   tool_call_id?: string;
   name?: string;
 }
@@ -63,7 +77,11 @@ function toApiMessages(thread: Thread, system: string, includeUserText?: string)
       out.push({
         role: "assistant",
         content: m.content || null,
-        tool_calls: m.toolCalls?.map(tc => ({ id: tc.id, type: "function", function: { name: tc.name, arguments: tc.args || "{}" } })),
+        tool_calls: m.toolCalls?.map((tc) => ({
+          id: tc.id,
+          type: "function",
+          function: { name: tc.name, arguments: tc.args || "{}" },
+        })),
       });
     } else if (m.role === "tool") {
       out.push({ role: "tool", tool_call_id: m.toolCallId!, name: m.toolName, content: m.content });
@@ -76,13 +94,32 @@ function toApiMessages(thread: Thread, system: string, includeUserText?: string)
 }
 
 export async function runAgent(opts: RunOpts) {
-  const { thread, userText, provider, model, systemPrompt, searxngUrl, temperature, maxToolSteps, signal, onDelta, skipUserAppend } = opts;
+  const {
+    thread,
+    userText,
+    provider,
+    model,
+    systemPrompt,
+    searxngUrl,
+    temperature,
+    maxToolSteps,
+    signal,
+    onDelta,
+    skipUserAppend,
+  } = opts;
 
   if (!skipUserAppend) {
     thread.messages.push({ id: uid(), role: "user", content: userText, createdAt: Date.now() });
   }
 
-  const assistantMsg: Message = { id: uid(), role: "assistant", content: "", reasoning: "", toolCalls: [], createdAt: Date.now() };
+  const assistantMsg: Message = {
+    id: uid(),
+    role: "assistant",
+    content: "",
+    reasoning: "",
+    toolCalls: [],
+    createdAt: Date.now(),
+  };
   thread.messages.push(assistantMsg);
 
   const system = buildContextSystem(systemPrompt);
@@ -100,19 +137,53 @@ export async function runAgent(opts: RunOpts) {
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${provider.apiKey || "dummy"}`,
+      Authorization: `Bearer ${provider.apiKey || "dummy"}`,
     };
     if (provider.id === "openrouter") {
       headers["HTTP-Referer"] = window.location.origin;
       headers["X-Title"] = "Alice";
     }
 
-    const resp = await fetch(`${provider.baseUrl.replace(/\/$/, "")}/chat/completions`, {
-      method: "POST", headers, body: JSON.stringify(body), signal,
-    });
-    if (!resp.ok || !resp.body) {
-      const t = await resp.text().catch(() => "");
-      throw new Error(`provider ${resp.status}: ${t.slice(0, 300)}`);
+    let resp: Response | undefined;
+    let lastError: Error | null = null;
+    const maxRetries = 2;
+
+    // Retry logic for provider API calls
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        resp = await fetch(`${provider.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+          signal,
+        });
+
+        if (resp.ok) break; // Success
+
+        const t = await resp.text().catch(() => "");
+        lastError = new Error(`provider ${resp.status}: ${t.slice(0, 300)}`);
+
+        // Don't retry on 4xx client errors (except 429 rate limit)
+        if (resp.status >= 400 && resp.status < 500 && resp.status !== 429) {
+          throw lastError;
+        }
+
+        // Wait before retry (exponential backoff)
+        if (attempt < maxRetries) {
+          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+        }
+      } catch (e) {
+        lastError = e as Error;
+        if (attempt >= maxRetries) throw lastError;
+      }
+    }
+
+    if (!resp || !resp.ok) {
+      throw lastError || new Error("Provider request failed");
+    }
+
+    if (!resp.body) {
+      throw new Error("Provider returned no body");
     }
 
     // Stream
@@ -135,8 +206,26 @@ export async function runAgent(opts: RunOpts) {
         if (!l.startsWith("data:")) continue;
         const data = l.slice(5).trim();
         if (data === "[DONE]") break outer;
-        let json: { choices?: Array<{ delta?: { content?: string; reasoning_content?: string; reasoning?: string; tool_calls?: Array<{ index: number; id?: string; function?: { name?: string; arguments?: string } }> }; finish_reason?: string | null }> };
-        try { json = JSON.parse(data); } catch { continue; }
+        let json: {
+          choices?: Array<{
+            delta?: {
+              content?: string;
+              reasoning_content?: string;
+              reasoning?: string;
+              tool_calls?: Array<{
+                index: number;
+                id?: string;
+                function?: { name?: string; arguments?: string };
+              }>;
+            };
+            finish_reason?: string | null;
+          }>;
+        };
+        try {
+          json = JSON.parse(data);
+        } catch {
+          continue;
+        }
         const choice = json.choices?.[0];
         const delta = choice?.delta;
         if (!delta) continue;
@@ -160,16 +249,22 @@ export async function runAgent(opts: RunOpts) {
               stepToolCalls[idx].name = tc.function.name;
               const tcId = stepToolCalls[idx].id || `call_${idx}_${Date.now()}`;
               stepToolCalls[idx].id = tcId;
-              const existing = assistantMsg.toolCalls!.find(x => x.id === tcId);
+              const existing = assistantMsg.toolCalls!.find((x) => x.id === tcId);
               if (!existing) {
-                assistantMsg.toolCalls!.push({ id: tcId, name: tc.function.name, args: "", status: "preparing", startedAt: Date.now() });
+                assistantMsg.toolCalls!.push({
+                  id: tcId,
+                  name: tc.function.name,
+                  args: "",
+                  status: "preparing",
+                  startedAt: Date.now(),
+                });
                 onDelta({ type: "tool_call_start", toolCallId: tcId, toolName: tc.function.name });
               }
             }
             if (tc.function?.arguments) {
               stepToolCalls[idx].args += tc.function.arguments;
               const tcId = stepToolCalls[idx].id;
-              const existing = assistantMsg.toolCalls!.find(x => x.id === tcId);
+              const existing = assistantMsg.toolCalls!.find((x) => x.id === tcId);
               if (existing) existing.args += tc.function.arguments;
               onDelta({ type: "tool_call_args", toolCallId: tcId, args: tc.function.arguments });
             }
@@ -187,7 +282,7 @@ export async function runAgent(opts: RunOpts) {
 
     // Execute each tool call sequentially
     for (const tc of stepToolCalls) {
-      const stored = assistantMsg.toolCalls!.find(x => x.id === tc.id)!;
+      const stored = assistantMsg.toolCalls!.find((x) => x.id === tc.id)!;
       stored.args = tc.args;
       stored.status = "running";
       onDelta({ type: "tool_call_run", toolCallId: tc.id, toolName: tc.name, args: tc.args });
@@ -211,7 +306,12 @@ export async function runAgent(opts: RunOpts) {
         onDelta({ type: "tool_call_error", toolCallId: tc.id, toolName: tc.name, error: msg });
       }
       thread.messages.push({
-        id: uid(), role: "tool", content: result, toolCallId: tc.id, toolName: tc.name, createdAt: Date.now(),
+        id: uid(),
+        role: "tool",
+        content: result,
+        toolCallId: tc.id,
+        toolName: tc.name,
+        createdAt: Date.now(),
       });
     }
 
@@ -231,6 +331,6 @@ export async function discoverModels(baseUrl: string, apiKey: string): Promise<s
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
   const r = await fetch(`${baseUrl.replace(/\/$/, "")}/models`, { headers });
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-  const j = await r.json() as { data?: Array<{ id: string }> };
-  return (j.data ?? []).map(m => m.id).sort();
+  const j = (await r.json()) as { data?: Array<{ id: string }> };
+  return (j.data ?? []).map((m) => m.id).sort();
 }

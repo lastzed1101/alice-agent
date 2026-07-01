@@ -58,7 +58,8 @@ export function fsStat(path: string) {
   return { path: p, size: v[p].content.length, updatedAt: v[p].updatedAt };
 }
 export function fsMove(from: string, to: string) {
-  const a = norm(from), b = norm(to);
+  const a = norm(from),
+    b = norm(to);
   const v = loadVFS();
   if (!v[a]) throw new Error(`not found: ${a}`);
   v[b] = { ...v[a], path: b, updatedAt: Date.now() };
@@ -66,13 +67,17 @@ export function fsMove(from: string, to: string) {
   saveVFS(v);
 }
 export function fsCopy(from: string, to: string) {
-  const a = norm(from), b = norm(to);
+  const a = norm(from),
+    b = norm(to);
   const v = loadVFS();
   if (!v[a]) throw new Error(`not found: ${a}`);
   v[b] = { path: b, content: v[a].content, updatedAt: Date.now() };
   saveVFS(v);
 }
-export function fsGrep(pattern: string, dir = "/"): Array<{ path: string; line: number; text: string }> {
+export function fsGrep(
+  pattern: string,
+  dir = "/",
+): Array<{ path: string; line: number; text: string }> {
   const re = new RegExp(pattern);
   const v = loadVFS();
   const d = norm(dir);
@@ -80,8 +85,12 @@ export function fsGrep(pattern: string, dir = "/"): Array<{ path: string; line: 
   for (const p of Object.keys(v)) {
     if (d !== "/" && !p.startsWith(d + "/") && p !== d) continue;
     const lines = v[p].content.split("\n");
-    lines.forEach((line, i) => { if (re.test(line)) out.push({ path: p, line: i + 1, text: line }); });
+    lines.forEach((line, i) => {
+      if (re.test(line)) out.push({ path: p, line: i + 1, text: line });
+    });
   }
   return out.slice(0, 200);
 }
-export function fsAll() { return Object.values(loadVFS()).map(e => ({ path: e.path, size: e.content.length })); }
+export function fsAll() {
+  return Object.values(loadVFS()).map((e) => ({ path: e.path, size: e.content.length }));
+}
