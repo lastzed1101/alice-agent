@@ -40,25 +40,32 @@ export function AuthPage() {
         const { error: signInError } = await signIn(email, password);
         if (signInError) {
           // Auto-create account if login fails (account doesn't exist yet)
-          const { error: signUpError } = await signUp(email, password);
+          setSuccess("Account not found. Creating new account...");
+          const { error: signUpError, confirmationNeeded } = await signUp(email, password);
           if (signUpError) {
-            setError(signInError); // Show original login error
+            setError(String(signUpError));
+            setSuccess("");
+          } else if (confirmationNeeded) {
+            setError("Email confirmation is required. Please check your inbox, or disable email confirmation in your Supabase dashboard (Authentication → Settings → Email confirmation → OFF).\n\nYou can also try signing in again after confirming your email.");
+            setSuccess("");
           } else {
             // Account created and auto-signed-in
-            // State will update via onAuthStateChange
+            setSuccess("Account created! Signing in...");
           }
         }
       } else {
         const { error: signUpError, confirmationNeeded } = await signUp(email, password);
         if (signUpError) {
-          setError(signUpError);
+          setError(String(signUpError));
         } else if (confirmationNeeded) {
-          setSuccess("Check your email for a confirmation link!");
+          setError("Email confirmation is required. Please check your inbox, or disable email confirmation in your Supabase dashboard (Authentication → Settings → Email confirmation → OFF).\n\nAfter confirming, come back and sign in.");
+        } else {
+          setSuccess("Account created! Signing in...");
         }
-        // If no confirmation needed, user is auto-signed-in
       }
-    } catch {
-      setError("An unexpected error occurred");
+    } catch (err) {
+      console.error("[Auth] Unexpected error:", err);
+      setError("An unexpected error occurred. Check console for details.");
     } finally {
       setLoading(false);
     }
