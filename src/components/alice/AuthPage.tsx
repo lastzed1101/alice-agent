@@ -38,7 +38,16 @@ export function AuthPage() {
     try {
       if (mode === "signin") {
         const { error: signInError } = await signIn(email, password);
-        if (signInError) setError(signInError);
+        if (signInError) {
+          // Auto-create account if login fails (account doesn't exist yet)
+          const { error: signUpError } = await signUp(email, password);
+          if (signUpError) {
+            setError(signInError); // Show original login error
+          } else {
+            // Account created and auto-signed-in
+            // State will update via onAuthStateChange
+          }
+        }
       } else {
         const { error: signUpError, confirmationNeeded } = await signUp(email, password);
         if (signUpError) {
