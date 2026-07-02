@@ -85,9 +85,9 @@ const EXCLUDED_KEYS = new Set([K.sidebarState, K.vfs]);
 const PERSISTENT_KEYS = Object.values(K).filter((k) => !EXCLUDED_KEYS.has(k));
 
 /**
- * Load from disk first (via agent server), fall back to localStorage.
- * Called once on app startup to hydrate localStorage from disk.
- * Only loads data keys — not UI state like sidebar layout.
+ * Load from disk (via agent server) to hydrate localStorage on first visit.
+ * Only loads data for keys that are EMPTY in localStorage — never overwrites
+ * user changes that haven't synced to disk yet.
  */
 export async function hydrateFromDisk(): Promise<void> {
   if (typeof window === "undefined") return;
@@ -95,6 +95,10 @@ export async function hydrateFromDisk(): Promise<void> {
     const { configLoad } = await import("./server-backend");
     await Promise.allSettled(
       PERSISTENT_KEYS.map(async (key) => {
+        // Skip if localStorage already has data for this key
+        const existing = window.localStorage.getItem(key);
+        if (existing && existing !== "null" && existing !== "undefined") return;
+        // Only load from disk when localStorage is empty
         const diskValue = await configLoad({ data: { key } });
         if (diskValue !== null && diskValue !== undefined) {
           window.localStorage.setItem(key, JSON.stringify(diskValue));
