@@ -53,6 +53,12 @@ export interface AppSettings {
   searxngUrl: string;
   temperature: number;
   maxToolSteps: number;
+  /** Auto-compress context when nearing limit */
+  autoCompress?: boolean;
+  /** Show cost tracking in UI */
+  showCostTracking?: boolean;
+  /** UI theme ID */
+  theme?: string;
 }
 
 export interface MemoryEntry {

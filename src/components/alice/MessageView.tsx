@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Copy, RefreshCw, ThumbsUp, ThumbsDown, Check, User, Bot, ChevronRight, X, Edit2 } from "lucide-react";
+import { Copy, RefreshCw, ThumbsUp, ThumbsDown, Check, User, Bot, ChevronRight, X, Edit2, GitBranch } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import type { Message, ToolCall } from "@/lib/alice/types";
@@ -13,10 +13,11 @@ interface MessageViewProps {
   onCopy?: (msgId: string, content: string) => void;
   onEdit?: (msgId: string, newContent: string) => void;
   onRetry?: (msgId: string) => void;
+  onFork?: (msgId: string) => void;
   onFeedback?: (msgId: string, type: "like" | "dislike") => void;
 }
 
-export function MessageView({ msg, live, onCopy, onEdit, onRetry, onFeedback }: MessageViewProps) {
+export function MessageView({ msg, live, onCopy, onEdit, onRetry, onFork, onFeedback }: MessageViewProps) {
   const [editMode, setEditMode] = useState(false);
   const [editContent, setEditContent] = useState(msg.content);
   const [aliceImgError, setAliceImgError] = useState(false);
@@ -165,6 +166,15 @@ export function MessageView({ msg, live, onCopy, onEdit, onRetry, onFeedback }: 
           >
             <ThumbsDown className="h-3.5 w-3.5" />
           </button>
+          {onFork && msg.role === "assistant" && (
+            <button
+              onClick={() => onFork?.(msg.id)}
+              className="p-1.5 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              title="Fork thread from here"
+            >
+              <GitBranch className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
       </div>
     </div>

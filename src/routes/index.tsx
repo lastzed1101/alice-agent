@@ -54,6 +54,8 @@ import { runAgent } from "@/lib/alice/agent";
 import { TOOLS_BY_NAME } from "@/lib/alice/tools";
 import { startScheduler } from "@/lib/alice/scheduler";
 import { pullFromCloud, schedulePush } from "@/lib/alice/cloudSync";
+import { applyTheme } from "@/lib/alice/themes";
+import { PWAInstallBanner } from "@/components/alice/PWAInstallBanner";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -100,6 +102,8 @@ function AlicePage() {
   const [mobileActivityOpen, setMobileActivityOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [composerText, setComposerText] = useState("");
+  const [tokenBreakdown, setTokenBreakdown] = useState<null | { totalTokens: number; systemTokens: number; messagesTokens: number }>(null);
+  const [conversationCost, setConversationCost] = useState("");
   const [providerMenuOpen, setProviderMenuOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const providerMenuRef = useRef<HTMLDivElement>(null);
@@ -196,6 +200,9 @@ function AlicePage() {
       setKnowledge(loadKnowledge());
       setHydrated(true);
       startScheduler();
+      // Apply theme from settings
+      const loadedSettings = loadSettings();
+      applyTheme(loadedSettings.theme || "default");
 
       // Second: pull latest from disk (~/.alice/data/) and re-hydrate
       try {
@@ -296,6 +303,13 @@ function AlicePage() {
       saveSidebarState({ leftCollapsed, rightCollapsed, sidebarWidth, rightPanelWidth });
     }
   }, [leftCollapsed, rightCollapsed, sidebarWidth, rightPanelWidth, hydrated]);
+
+  // Apply theme when settings change
+  useEffect(() => {
+    if (settings) {
+      applyTheme(settings.theme || "default");
+    }
+  }, [settings?.theme]);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -427,6 +441,14 @@ function AlicePage() {
           temperature: settings.temperature,
           maxToolSteps: settings.maxToolSteps,
           signal: ac.signal,
+          autoCompress: settings.autoCompress !== false,
+          onCompress: (stats) => {
+            toast.info(`Context compressed: ${stats.originalCount} → ${stats.compressedCount} messages`);
+          },
+          onTokenUpdate: (breakdown, cost) => {
+            setTokenBreakdown(breakdown);
+            setConversationCost(cost);
+          },
           onDelta: (d) => {
             switch (d.type) {
               case "tool_call_start":
@@ -609,6 +631,31 @@ function AlicePage() {
     }
   };
 
+  const handleFork = useCallback((msgId: string) => {
+    if (!active) return;
+    const idx = active.messages.findIndex((m) => m.id === msgId);
+    if (idx === -1) return;
+    // Create a new thread with messages up to and including the fork point
+    const forkedMessages = active.messages.slice(0, idx + 1).map((m) => ({
+      ...m,
+      id: uid(),
+      toolCalls: m.toolCalls?.map((tc) => ({ ...tc })),
+    }));
+    const t: Thread = {
+      id: uid(),
+      title: `${active.title} (fork)`,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      messages: forkedMessages,
+      providerId: active.providerId,
+      model: active.model,
+    };
+    setThreads((cur) => [t, ...cur]);
+    setActiveId(t.id);
+    setPanel("chats");
+    toast.success("Thread forked");
+  }, [active]);
+
   const handleFeedback = (msgId: string, type: "like" | "dislike") => {
     if (!active) return;
     setThreads((prev) =>
@@ -757,8 +804,8 @@ function AlicePage() {
         return (
           <>
             {/* CHAT MESSAGES */}
-            <div ref={scrollRef} className="flex-1 overflow-y-auto bg-[var(--bg-chat)]">
-              <div className="mx-auto w-full px-4 md:px-8 py-6 space-y-6" style={{ maxWidth: leftCollapsed && rightCollapsed ? 760 : 960 }}>
+            <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden bg-[var(--bg-chat)]">
+              <div className="mx-auto w-full px-3 sm:px-4 md:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6" style={{ maxWidth: leftCollapsed && rightCollapsed ? 760 : 960 }}>
                 {!active || active.messages.length === 0 ? (
                   <WelcomeScreen onAction={(prompt) => setComposerText(prompt)} disabled={!ready} />
                 ) : (
@@ -771,6 +818,7 @@ function AlicePage() {
                       onEdit={handleEdit}
                       onRetry={handleRetry}
                       onFeedback={handleFeedback}
+                      onFork={handleFork}
                     />
                   ))
                 )}
@@ -779,7 +827,7 @@ function AlicePage() {
             </div>
 
             {/* COMPOSER */}
-            <div className="shrink-0 bg-[var(--bg-dark)] px-4 py-3">
+            <div className="shrink-0 bg-[var(--bg-dark)] px-3 sm:px-4 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] sm:py-3 border-t border-[var(--border-color)]/30">
               <div className="mx-auto" style={{ maxWidth: leftCollapsed && rightCollapsed ? 760 : 960 }}>
                 <Composer
                   value={composerText}
@@ -834,9 +882,9 @@ function AlicePage() {
       />
 
       {/* MAIN WORKSPACE */}
-      <div className="app-workspace">
+      <div className="app-workspace min-h-0">
         {/* TOP BAR */}
-        <header className="flex items-center justify-between px-4 py-2 border-b border-[var(--border-color)] bg-[var(--bg-panel)] shrink-0 h-12 relative z-30">
+        <header className="flex items-center justify-between px-2 sm:px-4 py-2 border-b border-[var(--border-color)] bg-[var(--bg-panel)] shrink-0 min-h-11 sm:min-h-12 relative z-30">
           <div className="flex items-center gap-2">
             {/* Mobile hamburger */}
             <button
@@ -998,7 +1046,7 @@ function AlicePage() {
         </header>
 
         {/* WORKSPACE CONTENT */}
-        <div className="flex-1 overflow-hidden flex flex-col">{renderWorkspace()}</div>
+        <div className="flex-1 min-h-0 overflow-hidden flex flex-col">{renderWorkspace()}</div>
       </div>
 
       {/* RESIZE HANDLE - Right Panel (desktop only) */}
@@ -1021,6 +1069,8 @@ function AlicePage() {
           thread={active}
           provider={provider}
           activeModel={activeModel}
+          tokenBreakdown={tokenBreakdown}
+          conversationCost={conversationCost}
         />
       </div>
 
@@ -1038,6 +1088,8 @@ function AlicePage() {
                 thread={active}
                 provider={provider}
                 activeModel={activeModel}
+                tokenBreakdown={tokenBreakdown}
+                conversationCost={conversationCost}
               />
             </div>
           </aside>
@@ -1091,6 +1143,7 @@ function AlicePage() {
       />
 
       <Toaster theme="dark" position="top-center" />
+      <PWAInstallBanner />
     </div>
   );
 }

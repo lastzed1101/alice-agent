@@ -6,10 +6,11 @@
 
 import * as server from "./server-backend";
 
-const AGENT_PORT = Number(import.meta.env.VITE_ALICE_AGENT_PORT || 3020);
+const AGENT_PORT_RAW = import.meta.env.VITE_ALICE_AGENT_PORT;
+const AGENT_PORT = AGENT_PORT_RAW ? Number(AGENT_PORT_RAW) : 3020;
 
 let agentUrl = `http://localhost:${AGENT_PORT}/api`;
-let fallbackMode = false;
+let fallbackMode = !AGENT_PORT_RAW; // SSR when no agent port configured (empty string from CLI)
 let fallbackWarning = false;
 
 function warnOnce(msg: string) {

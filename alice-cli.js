@@ -4,14 +4,14 @@
  * Alice AI Agent - CLI Entry Point
  *
  * Usage:
- *   alice              Start Alice (agent server + frontend + browser)
- *   alice --port 3020  Start agent server on custom port
+ *   alice              Start Alice (frontend only, single port)
+ *   alice --agent      Also start agent server (for extra tools)
  *   alice --no-open    Don't auto-open browser
  *   alice --help       Show help
  *
  * Architecture:
- *   - Agent Server (backend API): port 3020 (or --port)
- *   - Frontend (Vite dev server):  port 8082
+ *   - Frontend (Vite dev server):  port 8082 (or --port)
+ *   - Agent Server (optional):     port 3020 (via --agent flag)
  *   - Browser opens to:           http://localhost:8082
  */
 
@@ -24,8 +24,9 @@ import * as os from "node:os";
 // ============================================================
 const args = process.argv.slice(2);
 const flags = {
-  port: 3020,
-  frontendPort: 8082,
+  port: 8082,
+  agentPort: 3020,
+  agent: false,
   open: true,
   help: false,
 };
@@ -34,13 +35,15 @@ for (let i = 0; i < args.length; i++) {
   switch (args[i]) {
     case "--port":
     case "-p":
-      flags.port = Number(args[i + 1]) || 3020;
+      flags.port = Number(args[i + 1]) || 8082;
       i++;
       break;
-    case "--frontend-port":
-    case "-f":
-      flags.frontendPort = Number(args[i + 1]) || 8082;
+    case "--agent-port":
+      flags.agentPort = Number(args[i + 1]) || 3020;
       i++;
+      break;
+    case "--agent":
+      flags.agent = true;
       break;
     case "--no-open":
       flags.open = false;
@@ -63,24 +66,29 @@ Usage:
   alice [options]
 
 Options:
-  -p, --port <port>           Port for agent server (default: 3020)
-  -f, --frontend-port <port>  Port for frontend UI (default: 8082)
-  --no-open                   Don't auto-open browser
-  -h, --help                  Show help
+  -p, --port <port>         Port for frontend UI (default: 8082)
+  --agent                   Also start agent server (for shell/filesystem tools)
+  --agent-port <port>       Port for agent server (default: 3020, with --agent)
+  --no-open                 Don't auto-open browser
+  -h, --help                Show help
 
 Config directory: ~/.alice/
-  ~/.alice/config.json   Agent server configuration
   ~/.alice/data/         Persistent data storage
 
-Architecture:
-  Agent Server (API):  http://localhost:<port>       (default: 3020)
-  Frontend (UI):       http://localhost:<frontend>   (default: 8082)
-  Browser opens to:    http://localhost:<frontend>   (default: 8082)
+Architecture (single-port mode):
+  Frontend (UI):       http://localhost:<port>   (default: 8082)
+  Browser opens to:    http://localhost:<port>   (default: 8082)
+  Agent Server:        Not started (SSR mode via TanStack Start)
+
+Architecture (with --agent):
+  Frontend (UI):       http://localhost:<port>   (default: 8082)
+  Agent Server (API):  http://localhost:<agent>  (default: 3020)
+  Browser opens to:    http://localhost:<port>   (default: 8082)
 
 Examples:
-  alice                 Start with defaults
-  alice -p 4000         Start agent server on port 4000
-  alice -f 5173         Start frontend on port 5173
+  alice                 Start frontend only (recommended)
+  alice --agent         Start with agent server for extra tools
+  alice -p 5173         Start frontend on port 5173
   alice --no-open       Start without opening browser
 `);
   process.exit(0);
@@ -97,30 +105,31 @@ const projectRoot = scriptDir;
 // ============================================================
 console.log("\n  🐇 Starting Alice AI Agent...\n");
 
-const AGENT_PORT = flags.port;
-const FRONTEND_PORT = flags.frontendPort;
-const ALLOWED_ORIGINS = `http://localhost:${AGENT_PORT},http://localhost:${FRONTEND_PORT},http://localhost:5173,http://localhost:3000`;
+const FRONTEND_PORT = flags.port;
+const AGENT_PORT = flags.agentPort;
+const ALLOWED_ORIGINS = `http://localhost:${FRONTEND_PORT},http://localhost:${AGENT_PORT},http://localhost:5173,http://localhost:3000`;
 
-// ─── 1) Start Agent Server (backend API on port 3020) ──────────
-process.env.ALICE_AGENT_PORT = String(AGENT_PORT);
-process.env.ALICE_ORIGINS = ALLOWED_ORIGINS;
-
+// ─── 1) Start Agent Server (optional, with --agent flag) ───────
 let agentChild = null;
 
-// Dynamic import of the agent server
-try {
-  await import(path.join(projectRoot, "agent-server.ts"));
-} catch {
-  // Fallback: start via tsx
-  agentChild = exec(`npx tsx ${path.join(projectRoot, "agent-server.ts")}`, {
-    cwd: projectRoot,
-    env: { ...process.env, ALICE_AGENT_PORT: String(AGENT_PORT), ALICE_ORIGINS: ALLOWED_ORIGINS },
-  });
-  agentChild.stdout?.pipe(process.stdout);
-  agentChild.stderr?.pipe(process.stderr);
+if (flags.agent) {
+  process.env.ALICE_AGENT_PORT = String(AGENT_PORT);
+  process.env.ALICE_ORIGINS = ALLOWED_ORIGINS;
+  console.log(`  🐇 Starting agent server on port ${AGENT_PORT}...\n`);
+
+  try {
+    await import(path.join(projectRoot, "agent-server.ts"));
+  } catch {
+    agentChild = exec(`npx tsx ${path.join(projectRoot, "agent-server.ts")}`, {
+      cwd: projectRoot,
+      env: { ...process.env, ALICE_AGENT_PORT: String(AGENT_PORT), ALICE_ORIGINS: ALLOWED_ORIGINS },
+    });
+    agentChild.stdout?.pipe(process.stdout);
+    agentChild.stderr?.pipe(process.stderr);
+  }
 }
 
-// ─── 2) Start Frontend Dev Server (Vite on port 8082) ──────────
+// ─── 2) Start Frontend Dev Server (Vite) ───────────────────────
 console.log(`  🎨 Starting frontend on port ${FRONTEND_PORT}...\n`);
 
 const frontendChild = exec(`npx vite dev --port ${FRONTEND_PORT} --host`, {
@@ -129,7 +138,7 @@ const frontendChild = exec(`npx vite dev --port ${FRONTEND_PORT} --host`, {
     ...process.env,
     PORT: String(FRONTEND_PORT),
     VITE_PORT: String(FRONTEND_PORT),
-    VITE_ALICE_AGENT_PORT: String(AGENT_PORT),
+    VITE_ALICE_AGENT_PORT: flags.agent ? String(AGENT_PORT) : "",  // Empty = SSR mode
   },
 });
 
@@ -149,11 +158,14 @@ frontendChild.on("exit", (code) => {
 // ─── 3) Wait for both servers, then open browser ───────────────
 setTimeout(() => {
   const frontendUrl = `http://localhost:${FRONTEND_PORT}`;
-  const agentUrl = `http://localhost:${AGENT_PORT}`;
 
   console.log("\n  ─────────────────────────────────────────");
   console.log(`  🌐 Frontend (UI):  ${frontendUrl}`);
-  console.log(`  🐇 Agent Server:  ${agentUrl}`);
+  if (flags.agent) {
+    console.log(`  🐇 Agent Server:  http://localhost:${AGENT_PORT}`);
+  } else {
+    console.log("  🐇 Agent Mode:   SSR (TanStack Start)");
+  }
   console.log("  ─────────────────────────────────────────\n");
 
   if (flags.open) {

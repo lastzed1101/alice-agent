@@ -11,21 +11,52 @@ function validate<T>(d: T): T {
 }
 
 // ===== Shell =====
+// Load shell env from login shell for proper PATH and env vars
+let cachedShellEnv: NodeJS.ProcessEnv | null = null;
+
+async function getShellEnv(): Promise<NodeJS.ProcessEnv> {
+  if (cachedShellEnv) return cachedShellEnv;
+  try {
+    const { exec } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const execAsync = promisify(exec);
+    const { stdout } = await execAsync("bash -l -c 'env -0'", {
+      encoding: "utf-8",
+      timeout: 5000,
+      maxBuffer: 1024 * 1024,
+    });
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    const pairs = stdout.split("\0").filter(Boolean);
+    for (const pair of pairs) {
+      const idx = pair.indexOf("=");
+      if (idx > 0) {
+        env[pair.slice(0, idx)] = pair.slice(idx + 1);
+      }
+    }
+    cachedShellEnv = env;
+    return env;
+  } catch {
+    cachedShellEnv = process.env;
+    return process.env;
+  }
+}
+
 export const runShell = createServerFn({ method: "POST" })
   .validator((d: { command: string; timeout?: number; cwd?: string }) => d)
   .handler(async ({ data }) => {
-    const { execSync } = await import("node:child_process");
-    const cmd = data.command;
-    const timeout = data.timeout ?? 30000;
-    const cwd = data.cwd;
+    const { exec } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const execAsync = promisify(exec);
+    const env = await getShellEnv();
     try {
-      const output = execSync(cmd, {
+      const { stdout, stderr } = await execAsync(data.command, {
         encoding: "utf-8",
-        timeout,
-        cwd,
+        timeout: data.timeout ?? 30000,
+        cwd: data.cwd,
         maxBuffer: 10 * 1024 * 1024,
+        env,
       });
-      return { stdout: output, stderr: "", exitCode: 0 } satisfies ExecResult;
+      return { stdout: stdout || "", stderr: stderr || "", exitCode: 0 } satisfies ExecResult;
     } catch (e: any) {
       return {
         stdout: e.stdout?.toString() || "",
@@ -117,17 +148,21 @@ export const makeDirectory = createServerFn({ method: "POST" })
 export const executePython = createServerFn({ method: "POST" })
   .validator((d: { code: string; timeout?: number }) => d)
   .handler(async ({ data }) => {
-    const { execSync } = await import("node:child_process");
+    const { exec } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const execAsync = promisify(exec);
     const fs = await import("node:fs");
+    const env = await getShellEnv();
     const tmpFile = `/tmp/alice_py_${Date.now()}.py`;
     try {
       fs.writeFileSync(tmpFile, data.code, "utf-8");
-      const output = execSync(`python3 ${tmpFile}`, {
+      const { stdout } = await execAsync(`python3 ${tmpFile}`, {
         encoding: "utf-8",
         timeout: data.timeout ?? 30000,
         maxBuffer: 5 * 1024 * 1024,
+        env,
       });
-      return { stdout: output, stderr: "", exitCode: 0 } satisfies ExecResult;
+      return { stdout: stdout || "", stderr: "", exitCode: 0 } satisfies ExecResult;
     } catch (e: any) {
       return {
         stdout: e.stdout?.toString() || "",
@@ -144,17 +179,21 @@ export const executePython = createServerFn({ method: "POST" })
 export const executeNode = createServerFn({ method: "POST" })
   .validator((d: { code: string; timeout?: number }) => d)
   .handler(async ({ data }) => {
-    const { execSync } = await import("node:child_process");
+    const { exec } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const execAsync = promisify(exec);
     const fs = await import("node:fs");
+    const env = await getShellEnv();
     const tmpFile = `/tmp/alice_js_${Date.now()}.mjs`;
     try {
       fs.writeFileSync(tmpFile, data.code, "utf-8");
-      const output = execSync(`node ${tmpFile}`, {
+      const { stdout } = await execAsync(`node ${tmpFile}`, {
         encoding: "utf-8",
         timeout: data.timeout ?? 30000,
         maxBuffer: 5 * 1024 * 1024,
+        env,
       });
-      return { stdout: output, stderr: "", exitCode: 0 } satisfies ExecResult;
+      return { stdout: stdout || "", stderr: "", exitCode: 0 } satisfies ExecResult;
     } catch (e: any) {
       return {
         stdout: e.stdout?.toString() || "",
@@ -182,28 +221,37 @@ export const getEnv = createServerFn({ method: "POST" })
 export const whichBin = createServerFn({ method: "POST" })
   .validator((d: { name: string }) => d)
   .handler(async ({ data }) => {
-    const { execSync } = await import("node:child_process");
+    const { exec } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const execAsync = promisify(exec);
+    const env = await getShellEnv();
     try {
-      const result = execSync(
+      const { stdout } = await execAsync(
         `which ${data.name} 2>/dev/null || command -v ${data.name} 2>/dev/null`,
         {
           encoding: "utf-8",
           timeout: 5000,
+          env,
         },
       );
-      return result.trim();
+      return stdout.trim();
     } catch {
       return null;
     }
   });
 
 export const listProcesses = createServerFn({ method: "GET" }).handler(async () => {
-  const { execSync } = await import("node:child_process");
+  const { exec } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const execAsync = promisify(exec);
+  const env = await getShellEnv();
   try {
-    return execSync("ps aux --sort=-%mem | head -50", { encoding: "utf-8", timeout: 5000 });
+    const { stdout } = await execAsync("ps aux --sort=-%mem | head -50", { encoding: "utf-8", timeout: 5000, env });
+    return stdout;
   } catch {
     try {
-      return execSync("ps aux | head -50", { encoding: "utf-8", timeout: 5000 });
+      const { stdout } = await execAsync("ps aux | head -50", { encoding: "utf-8", timeout: 5000, env });
+      return stdout;
     } catch (e: any) {
       return `ERROR: ${e.message}`;
     }
@@ -258,13 +306,16 @@ export const dnsResolve = createServerFn({ method: "POST" })
 export const grepSearch = createServerFn({ method: "POST" })
   .validator((d: { pattern: string; path?: string; include?: string; maxResults?: number }) => d)
   .handler(async ({ data }) => {
-    const { execSync } = await import("node:child_process");
+    const { exec } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const execAsync = promisify(exec);
+    const env = await getShellEnv();
     const dir = data.path || ".";
     const include = data.include ? `--include="${data.include}"` : "";
     try {
-      const result = execSync(
+      const { stdout: result } = await execAsync(
         `rg -n --no-heading ${include} "${data.pattern}" ${dir} 2>/dev/null || grep -rn ${include} "${data.pattern}" ${dir} 2>/dev/null`,
-        { encoding: "utf-8", timeout: 15000, maxBuffer: 2 * 1024 * 1024 },
+        { encoding: "utf-8", timeout: 15000, maxBuffer: 2 * 1024 * 1024, env },
       );
       const max = data.maxResults ?? 200;
       return result
@@ -308,4 +359,100 @@ export const httpRequest = createServerFn({ method: "POST" })
       headers[k] = v;
     });
     return { status: resp.status, body, headers };
+  });
+
+// ===== Config Persistence (disk) =====
+import * as os from "node:os";
+import * as path from "node:path";
+
+const ALICE_DATA_DIR = path.join(os.homedir(), ".alice", "data");
+
+function ensureAliceDirSync() {
+  const fs = require("node:fs") as typeof import("node:fs");
+  if (!fs.existsSync(ALICE_DATA_DIR)) fs.mkdirSync(ALICE_DATA_DIR, { recursive: true });
+}
+
+export const configSave = createServerFn({ method: "POST" })
+  .validator((d: { key: string; value: unknown }) => d)
+  .handler(async ({ data }) => {
+    const fs = await import("node:fs");
+    const key = data.key;
+    if (!key || !/^[a-zA-Z0-9._-]+$/.test(key)) throw new Error("Invalid key");
+    ensureAliceDirSync();
+    const filePath = path.join(ALICE_DATA_DIR, `${key}.json`);
+    fs.writeFileSync(filePath, JSON.stringify(data.value, null, 2), "utf-8");
+    return { key, bytes: fs.statSync(filePath).size };
+  });
+
+export const configLoad = createServerFn({ method: "POST" })
+  .validator((d: { key: string }) => d)
+  .handler(async ({ data }) => {
+    const fs = await import("node:fs");
+    const key = data.key;
+    if (!key || !/^[a-zA-Z0-9._-]+$/.test(key)) throw new Error("Invalid key");
+    const filePath = path.join(ALICE_DATA_DIR, `${key}.json`);
+    if (!fs.existsSync(filePath)) return null;
+    try {
+      return JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    } catch {
+      return null;
+    }
+  });
+
+export const configDelete = createServerFn({ method: "POST" })
+  .validator((d: { key: string }) => d)
+  .handler(async ({ data }) => {
+    const fs = await import("node:fs");
+    const key = data.key;
+    if (!key || !/^[a-zA-Z0-9._-]+$/.test(key)) throw new Error("Invalid key");
+    const filePath = path.join(ALICE_DATA_DIR, `${key}.json`);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    return { deleted: key };
+  });
+
+export const configList = createServerFn({ method: "GET" })
+  .handler(async () => {
+    const fs = await import("node:fs");
+    ensureAliceDirSync();
+    return fs.readdirSync(ALICE_DATA_DIR)
+      .filter((f) => f.endsWith(".json"))
+      .map((f) => ({ key: f.replace(".json", ""), size: fs.statSync(path.join(ALICE_DATA_DIR, f)).size }));
+  });
+
+// ===== AI Chat Completions Proxy (hides API keys from browser) =====
+export const proxyChatCompletion = createServerFn({ method: "POST" })
+  .validator((d: { providerId: string; requestBody: Record<string, unknown> }) => d)
+  .handler(async ({ data }) => {
+    const fs = await import("node:fs");
+    // Load provider config from disk to get API key
+    const providersPath = path.join(ALICE_DATA_DIR, "alice.providers.json");
+    let providers: Array<{ id: string; baseUrl: string; apiKey: string; name: string }> = [];
+    try {
+      if (fs.existsSync(providersPath)) {
+        providers = JSON.parse(fs.readFileSync(providersPath, "utf-8"));
+      }
+    } catch { /* ignore */ }
+    const provider = providers.find((p) => p.id === data.providerId);
+    if (!provider) throw new Error(`Provider ${data.providerId} not found on disk`);
+    // Forward request to AI provider with API key from server-side storage
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${provider.apiKey || "dummy"}`,
+    };
+    if (data.providerId === "openrouter") {
+      headers["HTTP-Referer"] = "http://localhost:8082";
+      headers["X-Title"] = "Alice";
+    }
+    const resp = await fetch(
+      `${provider.baseUrl.replace(/\/$/, "")}/chat/completions`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify(data.requestBody),
+      },
+    );
+    const body = await resp.text();
+    const respHeaders: Record<string, string> = {};
+    resp.headers.forEach((v, k) => { respHeaders[k] = v; });
+    return { status: resp.status, body, headers: respHeaders };
   });

@@ -55,11 +55,10 @@ function write<T>(key: string, value: T) {
   syncToDisk(key, value);
 }
 
-// Debounced disk sync to avoid flooding the agent server
+// Debounced disk sync to avoid flooding the server
 const syncQueue = new Map<string, ReturnType<typeof setTimeout>>();
-const AGENT_URL = (typeof window !== "undefined" && (window as any).__ALICE_AGENT_URL) || (typeof window !== "undefined" ? `${window.location.protocol}//${window.location.hostname}:3020` : "http://localhost:3020");
 
-function syncToDisk(key: string, value: unknown) {
+async function syncToDisk(key: string, value: unknown) {
   if (typeof window === "undefined") return;
   // Clear previous pending sync for this key
   const prev = syncQueue.get(key);
@@ -67,13 +66,14 @@ function syncToDisk(key: string, value: unknown) {
   // Debounce: wait 500ms after last write before syncing to disk
   syncQueue.set(
     key,
-    setTimeout(() => {
+    setTimeout(async () => {
       syncQueue.delete(key);
-      fetch(`${AGENT_URL}/api/config/save`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key, value }),
-      }).catch(() => {}); // Silently ignore if agent server is down
+      try {
+        const { configSave } = await import("./server-backend");
+        await configSave({ data: { key, value } });
+      } catch {
+        // SSR not available — silently ignore
+      }
     }, 500),
   );
 }
@@ -92,23 +92,17 @@ const PERSISTENT_KEYS = Object.values(K).filter((k) => !EXCLUDED_KEYS.has(k));
 export async function hydrateFromDisk(): Promise<void> {
   if (typeof window === "undefined") return;
   try {
+    const { configLoad } = await import("./server-backend");
     await Promise.allSettled(
       PERSISTENT_KEYS.map(async (key) => {
-        const resp = await fetch(`${AGENT_URL}/api/config/load`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key }),
-        });
-        if (resp.ok) {
-          const diskValue = await resp.json();
-          if (diskValue !== null && diskValue !== undefined) {
-            window.localStorage.setItem(key, JSON.stringify(diskValue));
-          }
+        const diskValue = await configLoad({ data: { key } });
+        if (diskValue !== null && diskValue !== undefined) {
+          window.localStorage.setItem(key, JSON.stringify(diskValue));
         }
       }),
     );
   } catch {
-    // Agent server not running — that's fine, localStorage still works
+    // SSR not available — localStorage still works standalone
   }
 }
 
@@ -222,14 +216,17 @@ export const loadSettings = (): AppSettings => {
   const s = read<AppSettings | null>(K.settings, null);
   if (s) return s;
   const init: AppSettings = {
-    activeProviderId: "9router",
-    activeModel: "",
+    activeProviderId: "openrouter",
+    activeModel: "openai/gpt-4o-mini",
     systemPrompt: `You are Alice — a personal, self-improving AI companion who learns about the user over time.
 You have access to the real filesystem, a real shell, web search via SearXNG, persistent memory, code execution (Python/Node.js), reusable skills you can create, and a scheduler.
 Use tools whenever they help. Always think step-by-step. Be warm, concise, and curious.`,
     searxngUrl: "http://localhost:8080",
     temperature: 0.7,
     maxToolSteps: 25,
+    autoCompress: true,
+    showCostTracking: true,
+    theme: "electric-blue",
   };
   write(K.settings, init);
   return init;

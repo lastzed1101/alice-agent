@@ -56,7 +56,7 @@ export function Composer({ value, onChange, onSend, onAbort, busy, disabled }: C
   ];
 
   return (
-    <div className="bg-[var(--bg-dark)]">
+    <div className="bg-[var(--bg-dark)]" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
       <div className="mx-auto">
         {/* Attachment preview */}
         {attachments.length > 0 && (
@@ -82,7 +82,7 @@ export function Composer({ value, onChange, onSend, onAbort, busy, disabled }: C
         )}
 
         {/* Input wrapper */}
-        <div className="flex items-end gap-2 px-3 py-2 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-xl mx-0 my-2 focus-within:border-[var(--accent-purple)] focus-within:ring-1 focus-within:ring-[var(--accent-purple)]/30 transition-all cursor-text">
+        <div className="flex items-end gap-2 px-2 sm:px-3 py-1.5 sm:py-2 bg-[var(--bg-panel)] border border-[var(--border-color)] rounded-xl mx-0 my-1.5 sm:my-2 focus-within:border-[var(--accent-purple)] focus-within:ring-1 focus-within:ring-[var(--accent-purple)]/30 transition-all cursor-text">
           <textarea
             ref={ref}
             value={value}
@@ -118,7 +118,7 @@ export function Composer({ value, onChange, onSend, onAbort, busy, disabled }: C
         </div>
 
         {/* Pill toolbar buttons */}
-        <div className="flex items-center gap-1.5 px-1 pb-2 overflow-x-auto">
+        <div className="flex items-center gap-1.5 px-1 pb-1 sm:pb-2 overflow-x-auto">
           {toolbarButtons.map(({ icon: Icon, label, action, active }) => (
             <button
               key={label}

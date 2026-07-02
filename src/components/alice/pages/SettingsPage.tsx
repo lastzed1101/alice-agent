@@ -12,12 +12,14 @@ import {
   User,
   Database,
   FileJson,
+  Check,
 } from "lucide-react";
 import type { AppSettings, ProviderConfig, UserProfile } from "@/lib/alice/types";
 import { discoverModels } from "@/lib/alice/agent";
 import { toast } from "sonner";
 import { uid, exportAllData, importAllData } from "@/lib/alice/storage";
 import { cn } from "@/lib/utils";
+import { THEMES, applyTheme } from "@/lib/alice/themes";
 
 interface SettingsPageProps {
   settings: AppSettings;
@@ -341,6 +343,93 @@ export function SettingsPage({ settings, providers, profile, onSave }: SettingsP
                 <div className="text-sm text-[var(--text-secondary)] bg-[var(--bg-panel-alt)] border border-[var(--border-color)] rounded-lg px-3 py-2">
                   {s.activeModel || "None selected"}
                 </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="manager-card">
+            <h3 className="manager-card-title text-[var(--text-primary)] mb-3">Appearance</h3>
+            <p className="text-xs text-[var(--text-muted)] mb-3">Choose a color theme for Alice</p>
+            <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
+              {THEMES.map((t) => {
+                const isActive = (s.theme || "electric-blue") === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => {
+                      setS({ ...s, theme: t.id });
+                      applyTheme(t.id);
+                    }}
+                    className={cn(
+                      "relative flex flex-col items-center gap-1.5 p-2 rounded-lg border transition-all hover:scale-105",
+                      isActive
+                        ? "border-[var(--primary)] ring-1 ring-[var(--primary)]/30 bg-[var(--primary)]/10"
+                        : "border-[var(--border-color)] hover:border-[var(--primary)]/50",
+                    )}
+                  >
+                    <div className="flex gap-0.5">
+                      <div className="w-3 h-3 rounded-full" style={{ background: t.preview.primary }} />
+                      <div className="w-3 h-3 rounded-full" style={{ background: t.preview.accent }} />
+                      <div className="w-3 h-3 rounded-full border border-white/10" style={{ background: t.preview.bg }} />
+                    </div>
+                    <span className="text-[10px] text-[var(--text-secondary)] font-medium">{t.name}</span>
+                    {isActive && (
+                      <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[var(--primary)] flex items-center justify-center">
+                        <Check className="h-2.5 w-2.5 text-white" />
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="manager-card">
+            <h3 className="manager-card-title text-[var(--text-primary)] mb-3">Advanced</h3>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="text-sm text-[var(--text-secondary)] block">Auto Compress Context</label>
+                  <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
+                    Automatically compress old messages when context window is near limit
+                  </p>
+                </div>
+                <button
+                  onClick={() => setS({ ...s, autoCompress: s.autoCompress === false ? true : false })}
+                  className={cn(
+                    "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
+                    s.autoCompress !== false ? "bg-[var(--accent-purple)]" : "bg-[var(--bg-panel-alt)]",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                      s.autoCompress !== false ? "translate-x-6" : "translate-x-1",
+                    )}
+                  />
+                </button>
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="text-sm text-[var(--text-secondary)] block">Cost Tracking</label>
+                  <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
+                    Show estimated cost per conversation based on token usage
+                  </p>
+                </div>
+                <button
+                  onClick={() => setS({ ...s, showCostTracking: s.showCostTracking === false ? true : false })}
+                  className={cn(
+                    "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
+                    s.showCostTracking !== false ? "bg-[var(--accent-purple)]" : "bg-[var(--bg-panel-alt)]",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                      s.showCostTracking !== false ? "translate-x-6" : "translate-x-1",
+                    )}
+                  />
+                </button>
               </div>
             </div>
           </div>

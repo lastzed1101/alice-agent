@@ -12,7 +12,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, no-case-declarations */
 
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
-import { execSync, exec, ChildProcess } from "node:child_process";
+import { execSync, exec as execCb, ChildProcess } from "node:child_process";
+import { promisify } from "node:util";
+const execAsync = promisify(execCb);
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -68,15 +70,50 @@ interface ExecResult {
   exitCode: number;
 }
 
-function runShellCmd(command: string, timeout = 30000, cwd?: string): ExecResult {
+// Load shell environment from login shell so commands have proper PATH, env vars, etc.
+let shellEnvPromise: Promise<NodeJS.ProcessEnv> | null = null;
+
+async function loadShellEnvInner(): Promise<NodeJS.ProcessEnv> {
   try {
-    const output = execSync(command, {
+    const { stdout } = await execAsync("bash -l -c 'env -0'", {
+      encoding: "utf-8",
+      timeout: 5000,
+      maxBuffer: 1024 * 1024,
+    });
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    const pairs = stdout.split("\0").filter(Boolean);
+    for (const pair of pairs) {
+      const idx = pair.indexOf("=");
+      if (idx > 0) {
+        const key = pair.slice(0, idx);
+        const value = pair.slice(idx + 1);
+        env[key] = value;
+      }
+    }
+    console.log("  ✅ Shell environment loaded (", Object.keys(env).length, "vars)");
+    return env;
+  } catch (e) {
+    console.warn("  ⚠️ Failed to load shell env, using process.env:", (e as Error).message);
+    return process.env;
+  }
+}
+
+function loadShellEnv(): Promise<NodeJS.ProcessEnv> {
+  if (!shellEnvPromise) shellEnvPromise = loadShellEnvInner();
+  return shellEnvPromise;
+}
+
+async function runShellCmd(command: string, timeout = 30000, cwd?: string): Promise<ExecResult> {
+  try {
+    const env = await loadShellEnv();
+    const { stdout, stderr } = await execAsync(command, {
       encoding: "utf-8",
       timeout,
       cwd,
       maxBuffer: 10 * 1024 * 1024,
+      env,
     });
-    return { stdout: output, stderr: "", exitCode: 0 };
+    return { stdout: stdout || "", stderr: stderr || "", exitCode: 0 };
   } catch (e: any) {
     return {
       stdout: e.stdout?.toString() || "",
@@ -85,6 +122,45 @@ function runShellCmd(command: string, timeout = 30000, cwd?: string): ExecResult
     };
   }
 }
+
+// Shell command history logging
+const SHELL_LOG_PATH = path.join(ALICE_DATA_DIR, "shell.log");
+const MAX_LOG_LINES = 5000; // keep last N entries in the log file
+
+interface ShellLogEntry {
+  ts: string;
+  route: string;
+  command: string;
+  cwd?: string;
+  exitCode: number;
+  durationMs: number;
+  stderr?: string; // truncated preview
+}
+
+function logShellCmd(entry: ShellLogEntry) {
+  try {
+    ensureAliceDir();
+    const line = JSON.stringify(entry) + "\n";
+    fs.appendFileSync(SHELL_LOG_PATH, line, "utf-8");
+  } catch {
+    /* non-critical — never throw */
+  }
+}
+
+/** Trim the log file to the last MAX_LOG_LINES entries (called lazily). */
+function trimShellLog() {
+  try {
+    if (!fs.existsSync(SHELL_LOG_PATH)) return;
+    const data = fs.readFileSync(SHELL_LOG_PATH, "utf-8").trim().split("\n");
+    if (data.length > MAX_LOG_LINES) {
+      fs.writeFileSync(SHELL_LOG_PATH, data.slice(-MAX_LOG_LINES).join("\n") + "\n", "utf-8");
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+let trimCounter = 0;
 
 // Running processes (for process management)
 const runningProcesses = new Map<string, ChildProcess>();
@@ -138,13 +214,21 @@ async function handleRoute(
 
   switch (route) {
     // ===== Shell =====
-    case "shell/run":
-      result = runShellCmd(body.command, body.timeout, body.cwd);
+    case "shell/run": {
+      const t0 = Date.now();
+      result = await runShellCmd(body.command, body.timeout, body.cwd);
+      logShellCmd({ ts: new Date().toISOString(), route, command: body.command, cwd: body.cwd, exitCode: result.exitCode, durationMs: Date.now() - t0, stderr: result.stderr ? result.stderr.slice(0, 200) : undefined });
+      if (++trimCounter % 100 === 0) trimShellLog();
       break;
+    }
 
-    case "shell/exec":
-      result = runShellCmd(body.command, body.timeout, body.cwd);
+    case "shell/exec": {
+      const t0 = Date.now();
+      result = await runShellCmd(body.command, body.timeout, body.cwd);
+      logShellCmd({ ts: new Date().toISOString(), route, command: body.command, cwd: body.cwd, exitCode: result.exitCode, durationMs: Date.now() - t0, stderr: result.stderr ? result.stderr.slice(0, 200) : undefined });
+      if (++trimCounter % 100 === 0) trimShellLog();
       break;
+    }
 
     case "shell/spawn": {
       const id = `proc_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
@@ -157,6 +241,7 @@ async function handleRoute(
       runningProcesses.set(id, proc);
       let stdout = "",
         stderr = "";
+      const spawnT0 = Date.now();
       proc.stdout?.on("data", (d: string) => {
         stdout += d;
       });
@@ -164,6 +249,8 @@ async function handleRoute(
         stderr += d;
       });
       proc.on("exit", (code) => {
+        logShellCmd({ ts: new Date().toISOString(), route, command: body.command, cwd: body.cwd, exitCode: code ?? 1, durationMs: Date.now() - spawnT0, stderr: stderr ? stderr.slice(0, 200) : undefined });
+        if (++trimCounter % 100 === 0) trimShellLog();
         result = { id, pid, exitCode: code, stdout, stderr };
       });
       result = { id, pid, status: "running" };
@@ -171,15 +258,19 @@ async function handleRoute(
     }
 
     case "shell/processes":
-      result = runShellCmd("ps aux --sort=-%mem | head -50", 5000);
+      result = await runShellCmd("ps aux --sort=-%mem | head -50", 5000);
       break;
 
-    case "shell/which":
-      result = runShellCmd(
+    case "shell/which": {
+      const t0 = Date.now();
+      result = await runShellCmd(
         `which ${body.name} 2>/dev/null || command -v ${body.name} 2>/dev/null`,
         5000,
       );
+      logShellCmd({ ts: new Date().toISOString(), route, command: `which ${body.name}`, exitCode: result.exitCode, durationMs: Date.now() - t0 });
+      if (++trimCounter % 100 === 0) trimShellLog();
       break;
+    }
 
     // ===== Filesystem =====
     case "fs/read": {
@@ -268,7 +359,7 @@ async function handleRoute(
     case "fs/grep": {
       const safeGrepDir = securePath(body.path || ".");
       const include = body.include ? `--include="${body.include}"` : "";
-      const grepResult = runShellCmd(
+      const grepResult = await runShellCmd(
         `rg -n --no-heading ${include} "${body.pattern}" "${safeGrepDir}" 2>/dev/null || grep -rn ${include} "${body.pattern}" "${safeGrepDir}" 2>/dev/null`,
         15000,
       );
@@ -302,7 +393,7 @@ async function handleRoute(
 
     case "fs/glob": {
       const baseDir = securePath(body.cwd || ".");
-      const findResult = runShellCmd(`find "${baseDir}" -type f 2>/dev/null | head -5000`, 15000);
+      const findResult = await runShellCmd(`find "${baseDir}" -type f 2>/dev/null | head -5000`, 15000);
       if (findResult.exitCode !== 0) {
         result = [];
         break;
@@ -324,7 +415,7 @@ async function handleRoute(
 
     case "fs/disk-usage": {
       const safeDiskPath = securePath(body.path || ".");
-      result = runShellCmd(
+      result = await runShellCmd(
         `du -sh "${safeDiskPath}" 2>/dev/null; echo "---"; df -h "${safeDiskPath}" 2>/dev/null`,
         10000,
       );
@@ -336,7 +427,10 @@ async function handleRoute(
       const tmpPy = `/tmp/alice_py_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.py`;
       try {
         fs.writeFileSync(tmpPy, body.code, "utf-8");
-        result = runShellCmd(`python3 "${tmpPy}"`, body.timeout || 30000);
+        const t0 = Date.now();
+        result = await runShellCmd(`python3 "${tmpPy}"`, body.timeout || 30000);
+        logShellCmd({ ts: new Date().toISOString(), route, command: body.code.slice(0, 200), exitCode: result.exitCode, durationMs: Date.now() - t0, stderr: result.stderr ? result.stderr.slice(0, 200) : undefined });
+        if (++trimCounter % 100 === 0) trimShellLog();
       } finally {
         try {
           fs.unlinkSync(tmpPy);
@@ -351,7 +445,10 @@ async function handleRoute(
       const tmpJs = `/tmp/alice_js_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.mjs`;
       try {
         fs.writeFileSync(tmpJs, body.code, "utf-8");
-        result = runShellCmd(`node "${tmpJs}"`, body.timeout || 30000);
+        const t0 = Date.now();
+        result = await runShellCmd(`node "${tmpJs}"`, body.timeout || 30000);
+        logShellCmd({ ts: new Date().toISOString(), route, command: body.code.slice(0, 200), exitCode: result.exitCode, durationMs: Date.now() - t0, stderr: result.stderr ? result.stderr.slice(0, 200) : undefined });
+        if (++trimCounter % 100 === 0) trimShellLog();
       } finally {
         try {
           fs.unlinkSync(tmpJs);
@@ -367,7 +464,10 @@ async function handleRoute(
       try {
         fs.writeFileSync(tmpSh, body.code, "utf-8");
         fs.chmodSync(tmpSh, 0o755);
-        result = runShellCmd(`bash "${tmpSh}"`, body.timeout || 30000);
+        const t0 = Date.now();
+        result = await runShellCmd(`bash "${tmpSh}"`, body.timeout || 30000);
+        logShellCmd({ ts: new Date().toISOString(), route, command: body.code.slice(0, 200), exitCode: result.exitCode, durationMs: Date.now() - t0, stderr: result.stderr ? result.stderr.slice(0, 200) : undefined });
+        if (++trimCounter % 100 === 0) trimShellLog();
       } finally {
         try {
           fs.unlinkSync(tmpSh);
@@ -425,6 +525,72 @@ async function handleRoute(
     case "system/cwd":
       result = process.cwd();
       break;
+
+    // ===== AI Chat Completions Proxy (hides API keys from browser) =====
+    case "chat/completions": {
+      const { providerId, requestBody } = body;
+      if (!providerId || !requestBody) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Missing providerId or requestBody" }));
+        return;
+      }
+      // Load provider config from disk to get API key
+      const providersPath = path.join(ALICE_DATA_DIR, "alice.providers.json");
+      let providers: any[] = [];
+      try {
+        if (fs.existsSync(providersPath)) {
+          providers = JSON.parse(fs.readFileSync(providersPath, "utf-8"));
+        }
+      } catch { /* ignore */ }
+      const provider = providers.find((p: any) => p.id === providerId);
+      if (!provider) {
+        res.writeHead(404, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: `Provider ${providerId} not found` }));
+        return;
+      }
+      // Forward request to AI provider with API key
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${provider.apiKey || "dummy"}`,
+      };
+      if (providerId === "openrouter") {
+        headers["HTTP-Referer"] = "http://localhost:8082";
+        headers["X-Title"] = "Alice";
+      }
+      try {
+        const upstreamResp = await fetch(
+          `${provider.baseUrl.replace(/\/$/, "")}/chat/completions`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify(requestBody),
+          },
+        );
+        // Stream the response back to client
+        const ct = upstreamResp.headers.get("content-type") || "application/json";
+        res.writeHead(upstreamResp.status, {
+          "Content-Type": ct,
+          "Access-Control-Allow-Origin": "*",
+        });
+        if (upstreamResp.body) {
+          const reader = upstreamResp.body.getReader();
+          const pump = async (): Promise<void> => {
+            const { done, value } = await reader.read();
+            if (done) { res.end(); return; }
+            res.write(value);
+            return pump();
+          };
+          await pump();
+        } else {
+          const text = await upstreamResp.text();
+          res.end(text);
+        }
+      } catch (e: any) {
+        res.writeHead(502, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+      return;
+    }
 
     // ===== HTTP Proxy =====
     case "http/fetch": {
@@ -500,6 +666,23 @@ async function handleRoute(
         .filter((f) => f.endsWith(".json"))
         .map((f) => ({ key: f.replace(".json", ""), size: fs.statSync(path.join(ALICE_DATA_DIR, f)).size }));
       result = files;
+      break;
+    }
+
+    case "shell/history": {
+      const limit = Math.min(body.limit ?? 100, MAX_LOG_LINES);
+      try {
+        if (!fs.existsSync(SHELL_LOG_PATH)) {
+          result = [];
+          break;
+        }
+        const lines = fs.readFileSync(SHELL_LOG_PATH, "utf-8").trim().split("\n").filter(Boolean);
+        result = lines.slice(-limit).map((l) => {
+          try { return JSON.parse(l); } catch { return null; }
+        }).filter(Boolean);
+      } catch {
+        result = [];
+      }
       break;
     }
 

@@ -19,11 +19,10 @@ const SHORTCUTS = [
 export function WelcomeScreen({ onAction, disabled }: WelcomeScreenProps) {
   return (
     <div
-      className="flex flex-col items-center justify-center text-center px-4 py-12"
-      style={{ minHeight: "calc(100dvh - 200px)" }}
+      className="flex flex-col items-center justify-center text-center px-4 py-8 sm:py-12 min-h-[40vh] md:min-h-[50vh]"
     >
-      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center text-white shadow-xl shadow-purple-500/20 mb-6">
-        <span className="text-2xl font-bold">A</span>
+      <div className="w-20 h-20 rounded-full overflow-hidden shadow-xl shadow-purple-500/30 mb-6 ring-2 ring-purple-500/40 bg-[var(--accent-purple)]">
+        <img src="/images/alice-avatar.png" alt="Alice" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
       </div>
       <h1 className="text-3xl font-bold mb-2 text-[var(--text-primary)]">Hi, I'm Alice.</h1>
       <p className="text-[var(--text-muted)] max-w-md mb-8 text-sm">

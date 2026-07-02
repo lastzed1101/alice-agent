@@ -1,6 +1,9 @@
 import type { Message, ProviderConfig, Thread } from "./types";
 import { TOOLS_BY_NAME, toolsForApi } from "./tools";
-import { loadMemory, loadProfile, loadSkills, uid } from "./storage";
+import { loadMemory, loadProfile, loadProviders, loadSkills, uid } from "./storage";
+import { estimateMessagesTokens, computeTokenBreakdown, type TokenBreakdown } from "./tokens";
+import { compressMessages, getContextWindow } from "./context";
+import { calculateCost, formatCost } from "./cost";
 
 export interface AgentDelta {
   type:
@@ -35,6 +38,12 @@ export interface RunOpts {
   onDelta: (d: AgentDelta) => void;
   /** if true, do not append a user message (used by scheduler) */
   skipUserAppend?: boolean;
+  /** Auto-compress context when nearing limit */
+  autoCompress?: boolean;
+  /** Callback when context is compressed */
+  onCompress?: (stats: { originalCount: number; compressedCount: number }) => void;
+  /** Callback for token/cost updates */
+  onTokenUpdate?: (breakdown: TokenBreakdown, cost: string) => void;
 }
 
 function buildContextSystem(base: string): string {
@@ -123,26 +132,47 @@ export async function runAgent(opts: RunOpts) {
   thread.messages.push(assistantMsg);
 
   const system = buildContextSystem(systemPrompt);
+  const contextWindow = getContextWindow(provider, model);
+  let cumulativeInputTokens = 0;
+  let cumulativeOutputTokens = 0;
 
   for (let step = 0; step < maxToolSteps; step++) {
     onDelta({ type: "iter", text: String(step + 1) });
+    // Context compression: compress messages if nearing limit
+    let apiMessages = toApiMessages(thread, system);
+    if (opts.autoCompress !== false) {
+      const { messages: compressedMsgs, compressed } = compressMessages(
+        thread.messages,
+        system,
+        { contextWindow, compressThreshold: 0.75, responseBuffer: 4096, keepRecent: 10 },
+      );
+      if (compressed) {
+        // Convert compressed messages to API format
+        const compressedApiMsgs: ApiMsg[] = [];
+        for (const m of compressedMsgs) {
+          if (m.role === "assistant") {
+            compressedApiMsgs.push({ role: "assistant", content: m.content || null });
+          } else if (m.role === "user") {
+            compressedApiMsgs.push({ role: "user", content: m.content });
+          }
+          // Skip tool messages — they're already summarized in the compression summary
+        }
+        apiMessages = [{ role: "system", content: system }, ...compressedApiMsgs];
+        opts.onCompress?.({
+          originalCount: thread.messages.length,
+          compressedCount: compressedMsgs.length,
+        });
+      }
+    }
+
     const body = {
       model,
-      messages: toApiMessages(thread, system),
+      messages: apiMessages,
       temperature,
       stream: true,
       tools: toolsForApi(),
       tool_choice: "auto" as const,
     };
-
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${provider.apiKey || "dummy"}`,
-    };
-    if (provider.id === "openrouter") {
-      headers["HTTP-Referer"] = window.location.origin;
-      headers["X-Title"] = "Alice";
-    }
 
     let resp: Response | undefined;
     let lastError: Error | null = null;
@@ -151,12 +181,8 @@ export async function runAgent(opts: RunOpts) {
     // Retry logic for provider API calls
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        resp = await fetch(`${provider.baseUrl.replace(/\/$/, "")}/chat/completions`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify(body),
-          signal,
-        });
+        // Try server-side proxy first (hides API keys from browser, fixes CORS on mobile)
+        resp = await chatCompletionProxy(provider.id, body, signal);
 
         if (resp.ok) break; // Success
 
@@ -181,6 +207,10 @@ export async function runAgent(opts: RunOpts) {
     if (!resp || !resp.ok) {
       throw lastError || new Error("Provider request failed");
     }
+
+    // Estimate input tokens from the request body
+    const inputTokens = estimateMessagesTokens(thread.messages) + computeTokenBreakdown([], system).systemTokens;
+    cumulativeInputTokens += inputTokens;
 
     if (!resp.body) {
       throw new Error("Provider returned no body");
@@ -322,10 +352,72 @@ export async function runAgent(opts: RunOpts) {
     }
   }
 
+  // Report final token usage and cost
+  const outputTokens = estimateMessagesTokens([assistantMsg]);
+  cumulativeOutputTokens += outputTokens;
+  const breakdown = computeTokenBreakdown(thread.messages, system);
+  const cost = formatCost(calculateCost(cumulativeInputTokens, cumulativeOutputTokens, model));
+  opts.onTokenUpdate?.(breakdown, cost);
+
   return assistantMsg;
 }
 
+/**
+ * Proxy AI chat completions through the server-side backend.
+ * This hides API keys from the browser and fixes CORS issues on mobile.
+ * Falls back to direct client-side call if server proxy is unavailable.
+ */
+async function chatCompletionProxy(
+  providerId: string,
+  requestBody: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<Response> {
+  // Try agent server proxy first (port 3020)
+  const agentPortRaw = import.meta.env.VITE_ALICE_AGENT_PORT;
+  if (agentPortRaw) {
+    try {
+      const resp = await fetch(`http://localhost:${agentPortRaw}/api/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providerId, requestBody }),
+        signal,
+      });
+      if (resp.ok) return resp;
+    } catch { /* fall through to direct call */ }
+  }
+  // Try SSR server function proxy (non-streaming fallback)
+  try {
+    const { proxyChatCompletion } = await import("./server-backend");
+    const result = await proxyChatCompletion({ data: { providerId, requestBody } });
+    // Wrap the buffered body in a Response — streaming is lost in SSR mode
+    // but the app still functions correctly
+    return new Response(result.body, {
+      status: result.status,
+      headers: result.headers,
+    });
+  } catch { /* fall through */ }
+  // Direct client-side call (last resort fallback)
+  const providers = loadProviders();
+  const provider = providers.find((p) => p.id === providerId);
+  if (!provider) throw new Error(`Provider ${providerId} not found`);
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${provider.apiKey || "dummy"}`,
+  };
+  if (providerId === "openrouter") {
+    headers["HTTP-Referer"] = window.location.origin;
+    headers["X-Title"] = "Alice";
+  }
+  return fetch(`${provider.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(requestBody),
+    signal,
+  });
+}
+
 // Discover models from an OpenAI-compatible /models endpoint
+// Note: This uses direct client-side calls for model listing (low-risk, no chat data exposed)
 export async function discoverModels(baseUrl: string, apiKey: string): Promise<string[]> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
