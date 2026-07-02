@@ -24,6 +24,89 @@ const PORT = Number(process.env.ALICE_AGENT_PORT) || 3020;
 const ALLOWED_ORIGINS =
   process.env.ALICE_ORIGINS || "http://localhost:3000,http://localhost:5173,http://localhost:8080,http://localhost:8082";
 
+// ─── Static file serving (single-port mode) ──────────────────
+const PROJECT_ROOT = process.env.ALICE_PROJECT_ROOT || path.resolve(path.dirname(new URL(import.meta.url).pathname), ".");
+const DIST_DIR = path.join(PROJECT_ROOT, "dist");
+const STATIC_ENABLED = fs.existsSync(DIST_DIR);
+
+const MIME_TYPES: Record<string, string> = {
+  ".js":   "application/javascript; charset=utf-8",
+  ".mjs":  "application/javascript; charset=utf-8",
+  ".css":  "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".png":  "image/png",
+  ".jpg":  "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif":  "image/gif",
+  ".svg":  "image/svg+xml",
+  ".ico":  "image/x-icon",
+  ".webp": "image/webp",
+  ".woff": "font/woff",
+  ".woff2":"font/woff2",
+  ".ttf":  "font/ttf",
+  ".eot":  "application/vnd.ms-fontobject",
+  ".otf":  "font/otf",
+  ".wasm": "application/wasm",
+  ".txt":  "text/plain; charset=utf-8",
+  ".map":  "application/json",
+  ".mp4":  "video/mp4",
+  ".webm": "video/webm",
+  ".mp3":  "audio/mpeg",
+  ".wav":  "audio/wav",
+  ".ogg":  "audio/ogg",
+};
+
+function getMime(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  return MIME_TYPES[ext] || "application/octet-stream";
+}
+
+/** Try to serve a static file from dist/. Returns true if served. */
+function serveStatic(urlPath: string, res: ServerResponse): boolean {
+  if (!STATIC_ENABLED) return false;
+
+  // Resolve file path — prevent path traversal
+  const safe = path.normalize(urlPath).replace(/^\.\.\/?/, "");
+  const filePath = path.join(DIST_DIR, safe);
+  if (!filePath.startsWith(DIST_DIR)) return false;
+
+  try {
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile()) return false;
+
+    const ext = path.extname(filePath).toLowerCase();
+    // Immutable cache for hashed assets (JS/CSS/images), short cache for HTML
+    const isHtml = ext === ".html";
+    const cacheControl = isHtml
+      ? "no-cache"
+      : "public, max-age=31536000, immutable";
+
+    const etag = `"${stat.size}-${stat.mtimeMs}"`;
+    res.writeHead(200, {
+      "Content-Type": getMime(filePath),
+      "Cache-Control": cacheControl,
+      "ETag": etag,
+    });
+    fs.createReadStream(filePath).pipe(res);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Serve the SPA index.html for client-side routing. */
+function serveSPA(res: ServerResponse): void {
+  const indexPath = path.join(DIST_DIR, "index.html");
+  try {
+    const html = fs.readFileSync(indexPath, "utf-8");
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    res.end(html);
+  } catch {
+    res.writeHead(500, { "Content-Type": "text/plain" });
+    res.end("Alice frontend not built. Run: npm run build");
+  }
+}
+
 // ~/.alice/ config directory for persistent storage
 const ALICE_DIR = path.join(os.homedir(), ".alice");
 const ALICE_DATA_DIR = path.join(ALICE_DIR, "data");
@@ -183,24 +266,46 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
 
   // Parse URL
   const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
-  const parts = url.pathname.split("/").filter(Boolean);
+  const urlPath = url.pathname;
+  const parts = urlPath.split("/").filter(Boolean);
 
-  // Read body for POST
-  const body = await readBody(req);
-
-  try {
-    if (parts[0] === "api") {
+  // ─── API routes (/api/*) ──────────────────────────────────
+  if (parts[0] === "api") {
+    const body = await readBody(req);
+    try {
       const route = parts.slice(1).join("/");
       await handleRoute(route, req.method || "GET", body, url, res);
+    } catch (e: any) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  // ─── Root path → SPA ──────────────────────────────────────
+  if (urlPath === "/") {
+    if (STATIC_ENABLED) {
+      serveSPA(res);
     } else {
-      // Health check
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ status: "ok", agent: "alice", pid: process.pid }));
     }
-  } catch (e: any) {
-    res.writeHead(500, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: e.message }));
+    return;
   }
+
+  // ─── Static file serving (single-port mode) ────────────────
+  if (STATIC_ENABLED) {
+    // Try serving exact file from dist/
+    if (serveStatic(urlPath, res)) return;
+
+    // SPA fallback: non-API, non-file requests → index.html
+    serveSPA(res);
+    return;
+  }
+
+  // ─── No static files — return JSON health ──────────────────
+  res.writeHead(200, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ status: "ok", agent: "alice", pid: process.pid }));
 }
 
 async function handleRoute(

@@ -13,6 +13,7 @@
     "dev:agent": "npx tsx agent-server.ts",
     "dev:all": "npx concurrently \"npm run dev\" \"npm run dev:agent\"",
     "agent": "npx tsx agent-server.ts",
+    "start": "node alice-cli.js",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",

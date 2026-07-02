@@ -4,8 +4,9 @@
  * Alice AI Agent - CLI Entry Point
  *
  * Usage:
- *   alice              Start Alice (frontend only, single port)
- *   alice --agent      Also start agent server (for extra tools)
+ *   alice              Build & start Alice (single port, like Odysseus)
+ *   alice --dev        Start with Vite dev server (hot reload)
+ *   alice --port 3000  Custom port (default: 8082)
  *   alice --no-open    Don't auto-open browser
  *   alice --help       Show help
  *
@@ -20,19 +21,12 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 
 // ============================================================
-// Resolve project root (works whether installed globally via npm link
-// or run directly from the project directory)
+// Resolve project root
 // ============================================================
 function findProjectRoot() {
-  // 1. If run from project directory (npm run / node alice-cli.js)
   const scriptDir = path.dirname(new URL(import.meta.url).pathname);
-  if (fs.existsSync(path.join(scriptDir, "package.json"))) {
-    return scriptDir;
-  }
+  if (fs.existsSync(path.join(scriptDir, "package.json"))) return scriptDir;
 
-  // 2. If installed globally via npm link — follow symlinks
-  // npm link creates a symlink in /usr/local/bin/alice → /path/to/alice-cli.js
-  // import.meta.url points to the symlink target
   let scriptRealDir;
   try {
     const realScript = fs.realpathSync(new URL(import.meta.url).pathname);
@@ -40,33 +34,43 @@ function findProjectRoot() {
   } catch {
     scriptRealDir = path.dirname(new URL(import.meta.url).pathname);
   }
-  if (fs.existsSync(path.join(scriptRealDir, "package.json"))) {
-    return scriptRealDir;
-  }
+  if (fs.existsSync(path.join(scriptRealDir, "package.json"))) return scriptRealDir;
 
-  // 3. Check if running from within node_modules/.bin/alice
-  // Walk up to find the nearest package.json with "name": "alice-agent"
   let dir = scriptRealDir;
   for (let i = 0; i < 10; i++) {
     const pkgPath = path.join(dir, "package.json");
     if (fs.existsSync(pkgPath)) {
       try {
         const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
-        if (pkg.name === "alice-agent" || pkg.name === "@alice/agent") {
-          return dir;
-        }
+        if (pkg.name === "alice-agent" || pkg.name === "@alice/agent") return dir;
       } catch {}
     }
     const parent = path.dirname(dir);
     if (parent === dir) break;
     dir = parent;
   }
-
-  // 4. Fallback: use script directory
-  return realDir;
+  return scriptRealDir;
 }
 
 const PROJECT_ROOT = findProjectRoot();
+
+// ─── Load .env file (simple dotenv) ─────────────────────────
+function loadDotEnv() {
+  const envPath = path.join(PROJECT_ROOT, ".env");
+  try {
+    const content = fs.readFileSync(envPath, "utf-8");
+    for (const line of content.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const idx = trimmed.indexOf("=");
+      if (idx <= 0) continue;
+      const key = trimmed.slice(0, idx).trim();
+      const val = trimmed.slice(idx + 1).trim().replace(/^["']|["']$/g, "");
+      if (!process.env[key]) process.env[key] = val;
+    }
+  } catch {}
+}
+loadDotEnv();
 
 // ============================================================
 // CLI argument parsing
@@ -74,8 +78,7 @@ const PROJECT_ROOT = findProjectRoot();
 const args = process.argv.slice(2);
 const flags = {
   port: 8082,
-  agentPort: 3020,
-  agent: false,
+  dev: false,
   open: true,
   help: false,
 };
@@ -87,12 +90,8 @@ for (let i = 0; i < args.length; i++) {
       flags.port = Number(args[i + 1]) || 8082;
       i++;
       break;
-    case "--agent-port":
-      flags.agentPort = Number(args[i + 1]) || 3020;
-      i++;
-      break;
-    case "--agent":
-      flags.agent = true;
+    case "--dev":
+      flags.dev = true;
       break;
     case "--no-open":
       flags.open = false;
@@ -115,11 +114,10 @@ Usage:
   alice [options]
 
 Options:
-  -p, --port <port>         Port for frontend UI (default: 8082)
-  --agent                   Also start agent server (for shell/filesystem tools)
-  --agent-port <port>       Port for agent server (default: 3020, with --agent)
-  --no-open                 Don't auto-open browser
-  -h, --help                Show help
+  -p, --port <port>    Port (default: 8082)
+  --dev                Dev mode with Vite hot reload
+  --no-open            Don't auto-open browser
+  -h, --help           Show help
 
 Install globally:
   cd /path/to/alice-agent
@@ -139,7 +137,6 @@ Project directory: ${PROJECT_ROOT}
 if (!fs.existsSync(path.join(PROJECT_ROOT, "package.json"))) {
   console.error("  ❌ Could not find Alice project directory.");
   console.error(`  Looked in: ${PROJECT_ROOT}`);
-  console.error("  Make sure you've cloned the Alice repository and ran npm install.");
   process.exit(1);
 }
 
@@ -158,65 +155,96 @@ if (!fs.existsSync(path.join(PROJECT_ROOT, "node_modules"))) {
 // ============================================================
 console.log("\n  🐇 Starting Alice AI Agent...\n");
 
-const FRONTEND_PORT = flags.port;
-const AGENT_PORT = flags.agentPort;
-const ALLOWED_ORIGINS = `http://localhost:${FRONTEND_PORT},http://localhost:${AGENT_PORT},http://localhost:5173,http://localhost:3000`;
+const PORT = flags.port;
+let serverChild = null;
 
-// ─── 1) Start Agent Server (optional, with --agent flag) ───────
-let agentChild = null;
+let devAgentChild = null;
+let devFrontendChild = null;
 
-if (flags.agent) {
-  process.env.ALICE_AGENT_PORT = String(AGENT_PORT);
-  process.env.ALICE_ORIGINS = ALLOWED_ORIGINS;
-  console.log(`  🐇 Starting agent server on port ${AGENT_PORT}...\n`);
+if (flags.dev) {
+  // ─── Dev mode: Vite dev server + agent server (2 ports) ───
+  console.log("  🛠️  Dev mode: Vite + Agent server (2 ports)\n");
 
-  // Use tsx to run TypeScript files
+  // Start agent server on port 3020
   const tsxBin = path.join(PROJECT_ROOT, "node_modules", ".bin", "tsx");
   const agentPath = path.join(PROJECT_ROOT, "agent-server.ts");
-  agentChild = exec(`"${tsxBin}" "${agentPath}"`, {
+  process.env.ALICE_AGENT_PORT = "3020";
+  process.env.ALICE_PROJECT_ROOT = PROJECT_ROOT;
+  process.env.ALICE_ORIGINS = `http://localhost:${PORT},http://localhost:3020,http://localhost:5173`;
+
+  devAgentChild = exec(`"${tsxBin}" "${agentPath}"`, {
     cwd: PROJECT_ROOT,
-    env: { ...process.env, ALICE_AGENT_PORT: String(AGENT_PORT), ALICE_ORIGINS: ALLOWED_ORIGINS },
+    env: { ...process.env },
   });
-  agentChild.stdout?.pipe(process.stdout);
-  agentChild.stderr?.pipe(process.stderr);
+  devAgentChild.stdout?.pipe(process.stdout);
+  devAgentChild.stderr?.pipe(process.stderr);
+
+  // Start Vite dev server on main port
+  const viteBin = path.join(PROJECT_ROOT, "node_modules", ".bin", "vite");
+  devFrontendChild = exec(`"${viteBin}" dev --port ${PORT} --host`, {
+    cwd: PROJECT_ROOT,
+    env: {
+      ...process.env,
+      PORT: String(PORT),
+      VITE_PORT: String(PORT),
+      VITE_ALICE_AGENT_PORT: "3020",
+    },
+  });
+  devFrontendChild.stdout?.pipe(process.stdout);
+  devFrontendChild.stderr?.pipe(process.stderr);
+  devFrontendChild.on("error", (err) => console.error(`  ❌ Vite failed: ${err.message}`));
+
+  serverChild = devFrontendChild; // track for shutdown
+} else {
+  // ─── Production mode: single port (like Odysseus) ──────────
+
+  // 1) Build frontend if dist/ doesn't exist or is stale
+  const distIndex = path.join(PROJECT_ROOT, "dist", "index.html");
+  const needsBuild = !fs.existsSync(distIndex);
+
+  if (needsBuild) {
+    console.log("  📦 Building frontend...\n");
+    try {
+      const viteBin = path.join(PROJECT_ROOT, "node_modules", ".bin", "vite");
+      execSync(`"${viteBin}" build`, { cwd: PROJECT_ROOT, stdio: "inherit" });
+      console.log("  ✅ Build complete\n");
+    } catch {
+      console.error("  ❌ Build failed. Try: npm run build");
+      process.exit(1);
+    }
+  } else {
+    console.log("  ✅ Frontend already built (dist/index.html exists)\n");
+  }
+
+  // 2) Start agent server (serves API + static files on one port)
+  const tsxBin = path.join(PROJECT_ROOT, "node_modules", ".bin", "tsx");
+  const agentPath = path.join(PROJECT_ROOT, "agent-server.ts");
+  process.env.ALICE_AGENT_PORT = String(PORT);
+  process.env.ALICE_PROJECT_ROOT = PROJECT_ROOT;
+  process.env.ALICE_ORIGINS = `http://localhost:${PORT}`;
+
+  console.log(`  🐇 Starting Alice on port ${PORT} (single-port mode)...\n`);
+
+  serverChild = exec(`"${tsxBin}" "${agentPath}"`, {
+    cwd: PROJECT_ROOT,
+    env: { ...process.env },
+  });
+  serverChild.stdout?.pipe(process.stdout);
+  serverChild.stderr?.pipe(process.stderr);
 }
 
-// ─── 2) Start Frontend Dev Server (Vite) ───────────────────────
-console.log(`  🎨 Starting frontend on port ${FRONTEND_PORT}...\n`);
-
-const viteBin = path.join(PROJECT_ROOT, "node_modules", ".bin", "vite");
-const frontendChild = exec(`"${viteBin}" dev --port ${FRONTEND_PORT} --host`, {
-  cwd: PROJECT_ROOT,
-  env: {
-    ...process.env,
-    PORT: String(FRONTEND_PORT),
-    VITE_PORT: String(FRONTEND_PORT),
-    VITE_ALICE_AGENT_PORT: flags.agent ? String(AGENT_PORT) : "",
-  },
+serverChild?.on("error", (err) => {
+  console.error(`  ❌ Server failed to start: ${err.message}`);
 });
 
-frontendChild.stdout?.pipe(process.stdout);
-frontendChild.stderr?.pipe(process.stderr);
-
-frontendChild.on("error", (err) => {
-  console.error(`  ❌ Frontend failed to start: ${err.message}`);
-});
-frontendChild.on("exit", (code) => {
-  if (code && code !== 0 && code !== null) {
-    console.error(`  ❌ Frontend exited with code ${code}`);
-  }
-});
-
-// ─── 3) Wait for server, then open browser ────────────────────
+// ─── Wait for server, then open browser ────────────────────
 setTimeout(() => {
-  const frontendUrl = `http://localhost:${FRONTEND_PORT}`;
+  const url = `http://localhost:${PORT}`;
 
   console.log("\n  ─────────────────────────────────────────");
-  console.log(`  🌐 Frontend (UI):  ${frontendUrl}`);
-  if (flags.agent) {
-    console.log(`  🐇 Agent Server:  http://localhost:${AGENT_PORT}`);
-  } else {
-    console.log("  🐇 Agent Mode:   SSR (TanStack Start)");
+  console.log(`  🌐 Alice:         ${url}`);
+  if (flags.dev) {
+    console.log(`  🔧 Agent Server:  http://localhost:3020`);
   }
   console.log("  ─────────────────────────────────────────\n");
 
@@ -224,29 +252,26 @@ setTimeout(() => {
     const platform = os.platform();
     const cmd =
       platform === "darwin"
-        ? `open "${frontendUrl}"`
+        ? `open "${url}"`
         : platform === "win32"
-          ? `start "" "${frontendUrl}"`
-          : `xdg-open "${frontendUrl}" 2>/dev/null || echo ""`;
+          ? `start "" "${url}"`
+          : `xdg-open "${url}" 2>/dev/null || echo ""`;
     try {
       execSync(cmd, { stdio: "ignore" });
     } catch {
-      console.log(`  📌 Open ${frontendUrl} in your browser\n`);
+      console.log(`  📌 Open ${url} in your browser\n`);
     }
   }
 
   console.log("  Press Ctrl+C to stop\n");
 }, 3000);
 
-// ─── 4) Graceful shutdown on Ctrl+C ────────────────────────────
+// ─── Graceful shutdown ─────────────────────────────────────
 function shutdown() {
   console.log("\n  Shutting down Alice...");
-  try {
-    frontendChild.kill("SIGTERM");
-  } catch {}
-  try {
-    agentChild?.kill("SIGTERM");
-  } catch {}
+  try { serverChild?.kill("SIGTERM"); } catch {}
+  try { devAgentChild?.kill("SIGTERM"); } catch {}
+  try { devFrontendChild?.kill("SIGTERM"); } catch {}
   setTimeout(() => process.exit(0), 500);
 }
 
