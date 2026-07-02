@@ -5,8 +5,8 @@ import { Bot, Mail, Lock, ArrowRight, Loader2, UserPlus } from "lucide-react";
 export function AuthPage() {
   const { signIn, signUp, loading: authLoading } = useAuth();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState("alice@agent.com");
+  const [password, setPassword] = useState("12345678");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState("");
@@ -159,19 +159,7 @@ export function AuthPage() {
           </div>
         </div>
 
-        {/* Skip */}
-        <div className="mt-4 text-center">
-          <button
-            onClick={() => {
-              // Skip auth — use local-only mode
-              // We'll dispatch a custom event that the app listens for
-              window.dispatchEvent(new CustomEvent("alice-skip-auth"));
-            }}
-            className="text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
-          >
-            Skip for now →
-          </button>
-        </div>
+
       </div>
     </div>
   );

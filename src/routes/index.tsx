@@ -82,30 +82,15 @@ type PanelId =
   | "tools"
   | "settings";
 
-const SKIP_AUTH_KEY = "alice.skipAuth";
-
 function AlicePage() {
   const auth = useAuth();
-  const [skipAuth, setSkipAuth] = useState(() => {
-    try { return localStorage.getItem(SKIP_AUTH_KEY) === "1"; } catch { return false; }
-  });
 
-  // Listen for skip-auth event from AuthPage
-  useEffect(() => {
-    const handler = () => {
-      setSkipAuth(true);
-      try { localStorage.setItem(SKIP_AUTH_KEY, "1"); } catch { /* ignore */ }
-    };
-    window.addEventListener("alice-skip-auth", handler);
-    return () => window.removeEventListener("alice-skip-auth", handler);
-  }, []);
-
-  // Show auth page if Supabase is configured, not logged in, and not skipped
-  if (!auth.loading && auth.configured && !auth.session && !skipAuth) {
+  // Show auth page if Supabase is configured and not logged in
+  if (!auth.loading && auth.configured && !auth.session) {
     return <AuthPage />;
   }
 
-  // Show login if Supabase is configured but not loading and no session
+  // Show loading while checking auth state
   if (auth.loading) {
     return (
       <div className="grid h-dvh place-items-center text-[var(--text-muted)] text-sm">
@@ -116,8 +101,6 @@ function AlicePage() {
 
   const handleLogout = async () => {
     await auth.signOut();
-    setSkipAuth(false);
-    try { localStorage.removeItem(SKIP_AUTH_KEY); } catch { /* ignore */ }
   };
 
   return (
