@@ -191,15 +191,9 @@ const defaultProviders = (): ProviderConfig[] => [
     models: ["gemini-2.0-flash", "gemini-2.5-pro"],
     builtin: true,
   },
-  {
-    id: "9router",
-    name: "9router (Local)",
-    baseUrl: "http://localhost:20128/v1",
-    apiKey: "dummy",
-    models: [],
-    builtin: true,
-  },
 ];
+
+const STALE_PROVIDER_IDS = new Set(["9router"]);
 
 export const loadProviders = (): ProviderConfig[] => {
   const stored = read<ProviderConfig[] | null>(K.providers, null);
@@ -208,32 +202,69 @@ export const loadProviders = (): ProviderConfig[] => {
     write(K.providers, d);
     return d;
   }
-  const ids = new Set(stored.map((p) => p.id));
-  for (const p of defaultProviders()) if (!ids.has(p.id)) stored.push(p);
-  // Ensure all providers have a models array (disk data may be missing it)
-  return stored.map((p) => ({ ...p, models: p.models || [] }));
+  // Build a lookup of default models for each provider
+  const defaultMap = new Map(defaultProviders().map((p) => [p.id, p.models]));
+  // Remove stale providers that no longer exist in defaults
+  let filtered = stored.filter((p) => !STALE_PROVIDER_IDS.has(p.id));
+  const ids = new Set(filtered.map((p) => p.id));
+  for (const p of defaultProviders()) if (!ids.has(p.id)) filtered.push(p);
+  // Ensure all providers have models: merge defaults if empty/missing
+  const result = filtered.map((p) => {
+    const defaultModels = defaultMap.get(p.id) || [];
+    const models = (p.models && p.models.length > 0) ? p.models : defaultModels;
+    return { ...p, models };
+  });
+  // Persist if stale providers were removed or models were merged
+  const needsSave = filtered.length !== stored.length || result.some((p, i) => p.models.length !== (stored.find((s) => s.id === p.id)?.models?.length ?? 0));
+  if (needsSave) write(K.providers, result);
+  return result;
 };
 export const saveProviders = (p: ProviderConfig[]) => write(K.providers, p);
 
 // Settings
-export const loadSettings = (): AppSettings => {
-  const s = read<AppSettings | null>(K.settings, null);
-  if (s) return s;
-  const init: AppSettings = {
-    activeProviderId: "openrouter",
-    activeModel: "openai/gpt-4o-mini",
-    systemPrompt: `You are Alice — a personal, self-improving AI companion who learns about the user over time.
+const SETTINGS_SCHEMA_VERSION = 1;
+
+const defaultSettings = (): AppSettings => ({
+  activeProviderId: "openrouter",
+  activeModel: "openai/gpt-4o-mini",
+  systemPrompt: `You are Alice — a personal, self-improving AI companion who learns about the user over time.
 You have access to the real filesystem, a real shell, web search via SearXNG, persistent memory, code execution (Python/Node.js), reusable skills you can create, and a scheduler.
 Use tools whenever they help. Always think step-by-step. Be warm, concise, and curious.`,
-    searxngUrl: "http://localhost:8080",
-    temperature: 0.7,
-    maxToolSteps: 25,
-    autoCompress: true,
-    showCostTracking: true,
-    theme: "electric-blue",
-  };
-  write(K.settings, init);
-  return init;
+  searxngUrl: "http://localhost:8080",
+  temperature: 0.7,
+  maxToolSteps: 25,
+  autoCompress: true,
+  showCostTracking: true,
+  theme: "electric-blue",
+  cloudSync: false,
+  schemaVersion: SETTINGS_SCHEMA_VERSION,
+});
+
+export const loadSettings = (): AppSettings => {
+  const s = read<AppSettings | null>(K.settings, null);
+  const d = defaultSettings();
+  if (!s) {
+    write(K.settings, d);
+    return d;
+  }
+  // Migration: detect stale provider from old schema and reset to defaults
+  const STALE_PROVIDERS = new Set(["9router"]);
+  let migrated = { ...s };
+  let needsSave = false;
+  if (STALE_PROVIDERS.has(migrated.activeProviderId)) {
+    migrated.activeProviderId = d.activeProviderId;
+    migrated.activeModel = d.activeModel;
+    needsSave = true;
+  }
+  // Migration: ensure new fields exist
+  if (migrated.cloudSync === undefined) { migrated.cloudSync = d.cloudSync; needsSave = true; }
+  if (migrated.schemaVersion === undefined || migrated.schemaVersion < SETTINGS_SCHEMA_VERSION) {
+    migrated.schemaVersion = SETTINGS_SCHEMA_VERSION;
+    needsSave = true;
+  }
+  // Persist migrated settings so we don't re-migrate every load
+  if (needsSave) write(K.settings, migrated);
+  return migrated;
 };
 export const saveSettings = (s: AppSettings) => write(K.settings, s);
 

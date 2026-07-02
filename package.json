@@ -21,7 +21,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "postinstall": "node -e \"const fs=require('fs');const p='./alice-cli.js';if(fs.existsSync(p)){fs.chmodSync(p,0o755)}\""
+    "postinstall": "chmod +x alice-cli.js 2>/dev/null || true"
   },
   "files": [
     "dist/",

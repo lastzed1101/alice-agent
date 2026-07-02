@@ -9,15 +9,64 @@
  *   alice --no-open    Don't auto-open browser
  *   alice --help       Show help
  *
- * Architecture:
- *   - Frontend (Vite dev server):  port 8082 (or --port)
- *   - Agent Server (optional):     port 3020 (via --agent flag)
- *   - Browser opens to:           http://localhost:8082
+ * Install globally:
+ *   cd /path/to/alice-agent && npm link
+ *   Then run: alice
  */
 
 import { execSync, exec } from "node:child_process";
 import * as path from "node:path";
+import * as fs from "node:fs";
 import * as os from "node:os";
+
+// ============================================================
+// Resolve project root (works whether installed globally via npm link
+// or run directly from the project directory)
+// ============================================================
+function findProjectRoot() {
+  // 1. If run from project directory (npm run / node alice-cli.js)
+  const scriptDir = path.dirname(new URL(import.meta.url).pathname);
+  if (fs.existsSync(path.join(scriptDir, "package.json"))) {
+    return scriptDir;
+  }
+
+  // 2. If installed globally via npm link — follow symlinks
+  // npm link creates a symlink in /usr/local/bin/alice → /path/to/alice-cli.js
+  // import.meta.url points to the symlink target
+  let scriptRealDir;
+  try {
+    const realScript = fs.realpathSync(new URL(import.meta.url).pathname);
+    scriptRealDir = path.dirname(realScript);
+  } catch {
+    scriptRealDir = path.dirname(new URL(import.meta.url).pathname);
+  }
+  if (fs.existsSync(path.join(scriptRealDir, "package.json"))) {
+    return scriptRealDir;
+  }
+
+  // 3. Check if running from within node_modules/.bin/alice
+  // Walk up to find the nearest package.json with "name": "alice-agent"
+  let dir = scriptRealDir;
+  for (let i = 0; i < 10; i++) {
+    const pkgPath = path.join(dir, "package.json");
+    if (fs.existsSync(pkgPath)) {
+      try {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+        if (pkg.name === "alice-agent" || pkg.name === "@alice/agent") {
+          return dir;
+        }
+      } catch {}
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+
+  // 4. Fallback: use script directory
+  return realDir;
+}
+
+const PROJECT_ROOT = findProjectRoot();
 
 // ============================================================
 // CLI argument parsing
@@ -72,33 +121,37 @@ Options:
   --no-open                 Don't auto-open browser
   -h, --help                Show help
 
-Config directory: ~/.alice/
-  ~/.alice/data/         Persistent data storage
+Install globally:
+  cd /path/to/alice-agent
+  npm install
+  npm link
 
-Architecture (single-port mode):
-  Frontend (UI):       http://localhost:<port>   (default: 8082)
-  Browser opens to:    http://localhost:<port>   (default: 8082)
-  Agent Server:        Not started (SSR mode via TanStack Start)
+  Then run: alice
 
-Architecture (with --agent):
-  Frontend (UI):       http://localhost:<port>   (default: 8082)
-  Agent Server (API):  http://localhost:<agent>  (default: 3020)
-  Browser opens to:    http://localhost:<port>   (default: 8082)
-
-Examples:
-  alice                 Start frontend only (recommended)
-  alice --agent         Start with agent server for extra tools
-  alice -p 5173         Start frontend on port 5173
-  alice --no-open       Start without opening browser
+Project directory: ${PROJECT_ROOT}
 `);
   process.exit(0);
 }
 
 // ============================================================
-// Resolve paths
+// Pre-flight checks
 // ============================================================
-const scriptDir = path.dirname(new URL(import.meta.url).pathname);
-const projectRoot = scriptDir;
+if (!fs.existsSync(path.join(PROJECT_ROOT, "package.json"))) {
+  console.error("  ❌ Could not find Alice project directory.");
+  console.error(`  Looked in: ${PROJECT_ROOT}`);
+  console.error("  Make sure you've cloned the Alice repository and ran npm install.");
+  process.exit(1);
+}
+
+if (!fs.existsSync(path.join(PROJECT_ROOT, "node_modules"))) {
+  console.log("  📦 Installing dependencies...\n");
+  try {
+    execSync("npm install", { cwd: PROJECT_ROOT, stdio: "inherit" });
+  } catch {
+    console.error("  ❌ npm install failed. Try running: npm install");
+    process.exit(1);
+  }
+}
 
 // ============================================================
 // Start
@@ -117,32 +170,31 @@ if (flags.agent) {
   process.env.ALICE_ORIGINS = ALLOWED_ORIGINS;
   console.log(`  🐇 Starting agent server on port ${AGENT_PORT}...\n`);
 
-  try {
-    await import(path.join(projectRoot, "agent-server.ts"));
-  } catch {
-    agentChild = exec(`npx tsx ${path.join(projectRoot, "agent-server.ts")}`, {
-      cwd: projectRoot,
-      env: { ...process.env, ALICE_AGENT_PORT: String(AGENT_PORT), ALICE_ORIGINS: ALLOWED_ORIGINS },
-    });
-    agentChild.stdout?.pipe(process.stdout);
-    agentChild.stderr?.pipe(process.stderr);
-  }
+  // Use tsx to run TypeScript files
+  const tsxBin = path.join(PROJECT_ROOT, "node_modules", ".bin", "tsx");
+  const agentPath = path.join(PROJECT_ROOT, "agent-server.ts");
+  agentChild = exec(`"${tsxBin}" "${agentPath}"`, {
+    cwd: PROJECT_ROOT,
+    env: { ...process.env, ALICE_AGENT_PORT: String(AGENT_PORT), ALICE_ORIGINS: ALLOWED_ORIGINS },
+  });
+  agentChild.stdout?.pipe(process.stdout);
+  agentChild.stderr?.pipe(process.stderr);
 }
 
 // ─── 2) Start Frontend Dev Server (Vite) ───────────────────────
 console.log(`  🎨 Starting frontend on port ${FRONTEND_PORT}...\n`);
 
-const frontendChild = exec(`npx vite dev --port ${FRONTEND_PORT} --host`, {
-  cwd: projectRoot,
+const viteBin = path.join(PROJECT_ROOT, "node_modules", ".bin", "vite");
+const frontendChild = exec(`"${viteBin}" dev --port ${FRONTEND_PORT} --host`, {
+  cwd: PROJECT_ROOT,
   env: {
     ...process.env,
     PORT: String(FRONTEND_PORT),
     VITE_PORT: String(FRONTEND_PORT),
-    VITE_ALICE_AGENT_PORT: flags.agent ? String(AGENT_PORT) : "",  // Empty = SSR mode
+    VITE_ALICE_AGENT_PORT: flags.agent ? String(AGENT_PORT) : "",
   },
 });
 
-// Pipe frontend output so the user sees Vite status + errors
 frontendChild.stdout?.pipe(process.stdout);
 frontendChild.stderr?.pipe(process.stderr);
 
@@ -155,7 +207,7 @@ frontendChild.on("exit", (code) => {
   }
 });
 
-// ─── 3) Wait for both servers, then open browser ───────────────
+// ─── 3) Wait for server, then open browser ────────────────────
 setTimeout(() => {
   const frontendUrl = `http://localhost:${FRONTEND_PORT}`;
 
@@ -174,8 +226,8 @@ setTimeout(() => {
       platform === "darwin"
         ? `open "${frontendUrl}"`
         : platform === "win32"
-          ? `start "${frontendUrl}"`
-          : `xdg-open "${frontendUrl}" 2>/dev/null || echo "Open ${frontendUrl} in your browser"`;
+          ? `start "" "${frontendUrl}"`
+          : `xdg-open "${frontendUrl}" 2>/dev/null || echo ""`;
     try {
       execSync(cmd, { stdio: "ignore" });
     } catch {

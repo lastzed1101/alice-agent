@@ -59,6 +59,10 @@ export interface AppSettings {
   showCostTracking?: boolean;
   /** UI theme ID */
   theme?: string;
+  /** Enable Supabase cloud sync across devices */
+  cloudSync?: boolean;
+  /** Schema version for migration */
+  schemaVersion?: number;
 }
 
 export interface MemoryEntry {

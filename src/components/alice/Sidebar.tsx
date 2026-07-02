@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AgentStatus, AppSettings, ProviderConfig, Thread } from "@/lib/alice/types";
+import { LogOut } from "lucide-react";
 import { format, subDays, startOfDay } from "date-fns";
 
 interface SidebarProps {
@@ -35,6 +36,8 @@ interface SidebarProps {
   provider?: ProviderConfig;
   busy?: boolean;
   agentStatus?: AgentStatus;
+  userEmail?: string | null;
+  onLogout?: () => void;
 }
 
 export function Sidebar({
@@ -53,6 +56,8 @@ export function Sidebar({
   provider,
   busy,
   agentStatus,
+  userEmail,
+  onLogout,
 }: SidebarProps) {
   const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
@@ -117,7 +122,14 @@ export function Sidebar({
   const openContextMenu = useCallback((threadId: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setContextMenu({ threadId, x: e.clientX, y: e.clientY });
+    // Clamp position so menu doesn't overflow off-screen
+    const menuW = 180;
+    const menuH = 180;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const x = Math.min(e.clientX, vw - menuW - 8);
+    const y = Math.min(e.clientY, vh - menuH - 8);
+    setContextMenu({ threadId, x: Math.max(8, x), y: Math.max(8, y) });
   }, []);
 
   const closeContextMenu = () => setContextMenu(null);
@@ -293,15 +305,26 @@ export function Sidebar({
       <div className="sidebar-fixed px-3 py-2 border-t border-[var(--border-color)] mt-auto">
         <div className={cn("flex items-center gap-3", isCollapsed && "justify-center")}>
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-600 to-purple-600 flex items-center justify-center text-white font-medium text-xs shrink-0">
-            {settings ? "U" : "A"}
+            {userEmail ? userEmail.charAt(0).toUpperCase() : "A"}
           </div>
           {!isCollapsed && (
             <div className="flex-1 min-w-0">
               <div className="text-sm font-medium text-[var(--text-primary)] truncate">
-                Alice User
+                {userEmail || "Local Mode"}
               </div>
-              <div className="text-[10px] text-[var(--text-muted)]">Free Plan</div>
+              <div className="text-[10px] text-[var(--text-muted)]">
+                {userEmail ? "Synced" : "No login"}
+              </div>
             </div>
+          )}
+          {!isCollapsed && userEmail && onLogout && (
+            <button
+              onClick={onLogout}
+              className="text-[var(--text-muted)] hover:text-[var(--red-danger)] p-1 rounded-md transition-colors shrink-0"
+              title="Sign out"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
           )}
         </div>
       </div>

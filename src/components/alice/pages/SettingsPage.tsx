@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Plus,
   Trash2,
@@ -8,7 +8,7 @@ import {
   Key,
   Globe,
   Server,
-  Brain,
+  Cloud,
   User,
   Database,
   FileJson,
@@ -39,8 +39,170 @@ const PROVIDER_ICONS: Record<string, string> = {
   together: "🤝",
   cohere: "🟣",
   gemini: "💎",
-  "9router": "🏠",
 };
+
+interface CloudSyncSectionProps {
+  s: AppSettings;
+  setS: React.Dispatch<React.SetStateAction<AppSettings>>;
+}
+
+/** Cloud sync section with Supabase config fields */
+function CloudSyncSection({ s, setS }: CloudSyncSectionProps) {
+  const [supabaseUrl, setSupabaseUrl] = useState("");
+  const [supabaseKey, setSupabaseKey] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [testResult, setTestResult] = useState<string | null>(null);
+
+  // Load current Supabase config from .env on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const { readTextFile } = await import("@/lib/alice/server-backend");
+        const envContent = await readTextFile({ data: { path: ".env" } });
+        const urlMatch = envContent.match(/^SUPABASE_URL=(.+)$/m);
+        const keyMatch = envContent.match(/^SUPABASE_PUBLISHABLE_KEY=(.+)$/m);
+        if (urlMatch) setSupabaseUrl(urlMatch[1].trim());
+        if (keyMatch) setSupabaseKey(keyMatch[1].trim());
+      } catch {
+        // .env doesn't exist or server not running — fields stay empty
+      }
+    })();
+  }, []);
+
+  const testConnection = async () => {
+    if (!supabaseUrl || !supabaseKey) {
+      toast.error("Fill in Supabase URL and Anon Key first");
+      return;
+    }
+    try {
+      // Query the app_state table directly to test connectivity
+      const resp = await fetch(
+        `${supabaseUrl}/rest/v1/app_state?select=id&limit=1`,
+        {
+          headers: {
+            apikey: supabaseKey,
+            Authorization: `Bearer ${supabaseKey}`,
+          },
+        },
+      );
+      if (resp.ok) {
+        const data = await resp.json();
+        setTestResult("Connected successfully!");
+        toast.success(`Supabase OK — ${data.length} row(s) found`);
+      } else {
+        const body = await resp.text();
+        setTestResult(`Error ${resp.status}: ${body.slice(0, 100)}`);
+        toast.error(`Connection failed: ${resp.status}`);
+      }
+    } catch (e) {
+      setTestResult(`Error: ${(e as Error).message}`);
+      toast.error(`Connection failed: ${(e as Error).message}`);
+    }
+  };
+
+  const saveEnvConfig = async () => {
+    if (!supabaseUrl && !supabaseKey) {
+      toast.error("Enter at least the Supabase URL");
+      return;
+    }
+    setSaving(true);
+    try {
+      const { saveSupabaseConfig } = await import("@/lib/alice/server-backend");
+      await saveSupabaseConfig({
+        data: {
+          url: supabaseUrl || undefined,
+          anonKey: supabaseKey || undefined,
+        },
+      });
+      toast.success("Supabase config saved to .env — restart Alice to apply");
+      setTestResult(null);
+    } catch (e) {
+      toast.error(`Failed to save: ${(e as Error).message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="manager-card space-y-4">
+      {/* Toggle */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Cloud className="h-4 w-4 text-[var(--accent-purple)]" />
+          <div>
+            <h3 className="manager-card-title text-[var(--text-primary)]">Cloud Sync (Supabase)</h3>
+            <p className="text-xs text-[var(--text-muted)] mt-0.5">
+              Sync all data across devices — providers, settings, memory, threads, skills, tasks, and knowledge.
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={() => setS((prev) => ({ ...prev, cloudSync: !prev.cloudSync }))}
+          className={cn(
+            "relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0",
+            s.cloudSync ? "bg-[var(--accent-purple)]" : "bg-[var(--bg-panel-alt)]",
+          )}
+        >
+          <span
+            className={cn(
+              "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+              s.cloudSync ? "translate-x-6" : "translate-x-1",
+            )}
+          />
+        </button>
+      </div>
+
+      {/* Supabase Config */}
+      <div className="border-t border-[var(--border-color)] pt-4 space-y-3">
+        <h4 className="text-xs uppercase tracking-wider text-[var(--text-muted)] font-semibold">
+          Supabase Configuration
+        </h4>
+        <div>
+          <label className="text-xs text-[var(--text-muted)] mb-1 block">Project URL</label>
+          <input
+            value={supabaseUrl}
+            onChange={(e) => setSupabaseUrl(e.target.value)}
+            placeholder="https://your-project.supabase.co"
+            className="w-full bg-[var(--bg-panel-alt)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm text-[var(--text-secondary)] outline-none focus:border-[var(--accent-purple)]"
+          />
+        </div>
+        <div>
+          <label className="text-xs text-[var(--text-muted)] mb-1 block">Anon Key (sb_publishable_...)</label>
+          <input
+            type="password"
+            value={supabaseKey}
+            onChange={(e) => setSupabaseKey(e.target.value)}
+            placeholder="sb_publishable_..."
+            className="w-full bg-[var(--bg-panel-alt)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm text-[var(--text-secondary)] outline-none focus:border-[var(--accent-purple)]"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={testConnection}
+            disabled={!supabaseUrl || !supabaseKey}
+            className="px-3 py-1.5 text-xs border border-[var(--border-color)] rounded-lg text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            Test Connection
+          </button>
+          <button
+            onClick={saveEnvConfig}
+            disabled={saving || !supabaseUrl}
+            className="px-3 py-1.5 text-xs bg-[var(--accent-purple)] text-white rounded-lg hover:bg-[var(--accent-purple-dark)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {saving ? "Saving…" : "Save to .env"}
+          </button>
+          {testResult && (
+            <span className={cn("text-xs", testResult.includes("success") ? "text-green-400" : "text-[var(--red-danger)]")}>
+              {testResult}
+            </span>
+          )}
+        </div>          <p className="text-[10px] text-[var(--text-muted)]">
+            After saving, restart Alice for changes to take effect. Config is stored in .env file.
+          </p>
+      </div>
+    </div>
+  );
+}
 
 export function SettingsPage({ settings, providers, profile, onSave }: SettingsPageProps) {
   const [tab, setTab] = useState<SettingsTab>("providers");
@@ -284,8 +446,7 @@ export function SettingsPage({ settings, providers, profile, onSave }: SettingsP
           </button>
 
           <p className="text-xs text-[var(--text-muted)]">
-            Most cloud providers block direct browser calls via CORS.{" "}
-            <strong>OpenRouter</strong> and local providers (like <strong>9router</strong>) allow it.
+            Most cloud providers block direct browser calls via CORS. <strong>OpenRouter</strong> allows it.
           </p>
         </div>
       )}
@@ -479,6 +640,9 @@ export function SettingsPage({ settings, providers, profile, onSave }: SettingsP
       {/* Data Tab */}
       {tab === "data" && (
         <div className="space-y-4 max-w-2xl">
+          {/* Cloud Sync */}
+          <CloudSyncSection s={s} setS={setS} />
+
           <div className="manager-card">
             <div className="flex items-center gap-2 mb-2">
               <Download className="h-4 w-4 text-[var(--accent-purple)]" />

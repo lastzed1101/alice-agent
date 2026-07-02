@@ -56,6 +56,8 @@ import { startScheduler } from "@/lib/alice/scheduler";
 import { pullFromCloud, schedulePush } from "@/lib/alice/cloudSync";
 import { applyTheme } from "@/lib/alice/themes";
 import { PWAInstallBanner } from "@/components/alice/PWAInstallBanner";
+import { useAuth } from "@/lib/alice/auth";
+import { AuthPage } from "@/components/alice/AuthPage";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -80,7 +82,59 @@ type PanelId =
   | "tools"
   | "settings";
 
+const SKIP_AUTH_KEY = "alice.skipAuth";
+
 function AlicePage() {
+  const auth = useAuth();
+  const [skipAuth, setSkipAuth] = useState(() => {
+    try { return localStorage.getItem(SKIP_AUTH_KEY) === "1"; } catch { return false; }
+  });
+
+  // Listen for skip-auth event from AuthPage
+  useEffect(() => {
+    const handler = () => {
+      setSkipAuth(true);
+      try { localStorage.setItem(SKIP_AUTH_KEY, "1"); } catch { /* ignore */ }
+    };
+    window.addEventListener("alice-skip-auth", handler);
+    return () => window.removeEventListener("alice-skip-auth", handler);
+  }, []);
+
+  // Show auth page if Supabase is configured, not logged in, and not skipped
+  if (!auth.loading && auth.configured && !auth.session && !skipAuth) {
+    return <AuthPage />;
+  }
+
+  // Show login if Supabase is configured but not loading and no session
+  if (auth.loading) {
+    return (
+      <div className="grid h-dvh place-items-center text-[var(--text-muted)] text-sm">
+        Loading Alice…
+      </div>
+    );
+  }
+
+  const handleLogout = async () => {
+    await auth.signOut();
+    setSkipAuth(false);
+    try { localStorage.removeItem(SKIP_AUTH_KEY); } catch { /* ignore */ }
+  };
+
+  return (
+    <AliceApp
+      userEmail={auth.user?.email ?? null}
+      onLogout={handleLogout}
+    />
+  );
+}
+
+function AliceApp({
+  userEmail,
+  onLogout,
+}: {
+  userEmail: string | null;
+  onLogout: () => void;
+}) {
   const [hydrated, setHydrated] = useState(false);
   const [threads, setThreads] = useState<Thread[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -219,19 +273,27 @@ function AlicePage() {
         // Agent server not running — localStorage is enough
       }
 
-      // Third: pull from cloud (Supabase) if configured
-      try {
-        const r = await pullFromCloud();
-        if (r.source === "cloud") {
-          setProviders(loadProviders());
-          setSettings(loadSettings());
-          setThreads(loadThreads());
-          setMemory(loadMemory());
-          setProfile(loadProfile());
-          toast.success("Loaded from cloud");
+      // Third: pull from cloud (Supabase) if cloud sync is enabled in settings
+      const currentSettings = loadSettings();
+      if (currentSettings.cloudSync) {
+        try {
+          const r = await pullFromCloud();
+          if (r.source === "cloud") {
+            setProviders(loadProviders());
+            setSettings(loadSettings());
+            setThreads(loadThreads());
+            setMemory(loadMemory());
+            setProfile(loadProfile());
+            setSkills(loadSkills());
+            setTasks(loadTasks());
+            setKnowledge(loadKnowledge());
+            toast.success("Synced from cloud");
+          } else if (r.source === "local-seed") {
+            toast.info("Cloud seeded with local data");
+          }
+        } catch (e) {
+          console.warn("[cloudSync] startup pull failed:", (e as Error).message);
         }
-      } catch (e) {
-        console.error(e);
       }
     })();
   }, []);
@@ -399,10 +461,10 @@ function AlicePage() {
   const sendMessage = useCallback(
     async (text: string) => {
       if (!settings) return;
-      // Use thread's stored provider/model or fall back to global
+      // Always use the global provider/model from the header dropdown
       const thread = ensureActive();
-      const providerId = thread.providerId || settings.activeProviderId;
-      const model = thread.model || settings.activeModel;
+      const providerId = settings.activeProviderId;
+      const model = settings.activeModel;
       const provider = providers.find((p) => p.id === providerId);
       if (!provider) {
         toast.error("Pick a provider in Settings");
@@ -413,11 +475,9 @@ function AlicePage() {
         return;
       }
 
-      // Store provider/model on conversation
-      if (!thread.providerId) {
-        thread.providerId = providerId;
-        thread.model = model;
-      }
+      // Store current provider/model on thread for display purposes
+      thread.providerId = providerId;
+      thread.model = model;
 
       if (thread.messages.length === 0) {
         thread.title = text.slice(0, 60);
@@ -565,8 +625,8 @@ function AlicePage() {
     active.messages = active.messages.slice(0, idx);
     setThreads((prev) => [...prev]);
 
-    const providerId = active.providerId || settings.activeProviderId;
-    const model = active.model || settings.activeModel;
+    const providerId = settings.activeProviderId;
+    const model = settings.activeModel;
     const provider = providers.find((p) => p.id === providerId);
     if (!provider) {
       toast.error("Pick a provider");
@@ -683,9 +743,9 @@ function AlicePage() {
     );
   }
 
-  // Use thread's provider/model or global
-  const activeProviderId = active?.providerId || settings.activeProviderId;
-  const activeModel = active?.model || settings.activeModel;
+  // Always use global provider/model from header dropdown
+  const activeProviderId = settings.activeProviderId;
+  const activeModel = settings.activeModel;
   const provider = providers.find((p) => p.id === activeProviderId);
   const ready = !!provider && !!activeModel;
 
@@ -871,6 +931,8 @@ function AlicePage() {
           provider={provider}
           busy={busy}
           agentStatus={agentStatus}
+          userEmail={userEmail}
+          onLogout={onLogout}
         />
       </div>
 
@@ -1122,6 +1184,8 @@ function AlicePage() {
               provider={provider}
               busy={busy}
               agentStatus={agentStatus}
+              userEmail={userEmail}
+              onLogout={onLogout}
             />
           </aside>
         </div>

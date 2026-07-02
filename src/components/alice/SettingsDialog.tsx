@@ -5,11 +5,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Plus, Trash2, RefreshCw, Download, Upload } from "lucide-react";
+import { Plus, Trash2, RefreshCw, Download, Upload, Cloud } from "lucide-react";
 import type { AppSettings, ProviderConfig, UserProfile } from "@/lib/alice/types";
 import { discoverModels } from "@/lib/alice/agent";
 import { toast } from "sonner";
-import { uid, exportAllData, importAllData } from "@/lib/alice/storage";
+import { uid, exportAllData, importAllData, saveSettings, saveProviders } from "@/lib/alice/storage";
 import type { ChangeEvent } from "react";
 
 export function SettingsDialog({
@@ -72,6 +72,8 @@ export function SettingsDialog({
     setProvs((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
 
   const save = () => {
+    saveSettings(s);
+    saveProviders(provs);
     onSave(s, provs, { ...prof, updatedAt: Date.now() });
     onOpenChange(false);
     toast.success("Settings saved");
@@ -156,8 +158,7 @@ export function SettingsDialog({
             </Button>
             <p className="text-xs text-muted-foreground">
               Note: most cloud providers block direct browser calls via CORS.{" "}
-              <strong>OpenRouter</strong> and your <strong>local 9router</strong> both allow it. For
-              OpenAI/Anthropic, prefer OpenRouter or run a local proxy.
+              <strong>OpenRouter</strong> allows it. For OpenAI/Anthropic, prefer OpenRouter or run a local proxy.
             </p>
           </TabsContent>
 
@@ -230,6 +231,29 @@ export function SettingsDialog({
           </TabsContent>
 
           <TabsContent value="data" className="space-y-3 pt-3">
+            <div className="rounded-lg border border-border p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Cloud className="h-4 w-4 text-[var(--accent-purple)]" />
+                  <div>
+                    <h3 className="font-medium">Cloud Sync (Supabase)</h3>
+                    <p className="text-xs text-muted-foreground">
+                      Sync providers, settings, memory, threads, and skills across devices.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setS({ ...s, cloudSync: !s.cloudSync })}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${s.cloudSync ? "bg-[var(--accent-purple)]" : "bg-gray-600"}`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${s.cloudSync ? "translate-x-6" : "translate-x-1"}`} />
+                </button>
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                Requires Supabase env vars in .env file. Restart Alice after changing.
+              </p>
+            </div>
+
             <div className="rounded-lg border border-border p-4 space-y-3">
               <h3 className="font-medium">Export all data</h3>
               <p className="text-xs text-muted-foreground">

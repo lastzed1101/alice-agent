@@ -4,417 +4,235 @@ Alice adalah AI companion pribadi yang belajar dari pengguna, mengingat percakap
 
 ## ✨ Fitur
 
-- **Multi-Provider AI** - Mendukung OpenAI, OpenRouter, Anthropic, dan provider custom lainnya
-- **Real Filesystem Access** - Baca, tulis, eksekusi shell langsung di server
-- **Code Execution** - Jalankan Python, JavaScript, dan shell script
-- **Persistent Memory** - Simpan fakta, preferensi, dan profil pengguna
-- **Reusable Skills** - Ciptakan dan gunakan kembali workflow kompleks
-- **Scheduled Tasks** - Jadwalkan tugas berulang (cron-like)
-- **Cloud Sync** - Sinkronisasi otomatis via Supabase (opsional)
-- **Web Search** - Integrasi SearXNG atau DuckDuckGo
-- **Responsive UI** - Mobile-friendly dengan panel yang bisa disembunyikan
+- **Multi-Provider AI** — OpenAI, OpenRouter, Anthropic, Google Gemini, Groq, DeepSeek, Together AI, Cohere
+- **Login & Auth** — Login via email/password, data sync per-user ke Supabase
+- **Real Filesystem Access** — Baca, tulis, eksekusi shell langsung di server
+- **Code Execution** — Jalankan Python, JavaScript, dan shell script
+- **Persistent Memory** — Simpan fakta, preferensi, dan profil pengguna
+- **Reusable Skills** — Ciptakan dan gunakan kembali workflow kompleks
+- **Scheduled Tasks** — Jadwalkan tugas berulang (cron-like)
+- **Cloud Sync** — Sinkronisasi data antar device via Supabase (per-user, RLS protected)
+- **Web Search** — Integrasi SearXNG atau DuckDuckGo
+- **56+ Tools** — Shell, filesystem, web, memory, skills, code execution
+- **Responsive UI** — Mobile-friendly dengan panel yang bisa disembunyikan
+- **PWA Support** — Installable di mobile dan desktop
+- **Theme System** — 14 built-in themes
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 
 - Node.js 20+
-- npm atau Bun
-- Python3 (untuk eksekusi kode Python)
-- Docker (opsional, untuk SearXNG web search)
+- npm
 
-### Instalasi (Global)
-
-Install Alice secara global agar bisa dijalankan dari mana saja:
-
-```bash
-# Clone dan install globally
-git clone https://github.com/Z-E-D1101/alice-agent.git
-cd alice-agent
-npm install
-npm link                    # Membuat command 'alice' tersedia global
-
-# Setup environment
-cp .env.example .env
-# Edit .env — tambahkan minimal 1 API key provider
-
-# Jalankan Alice dari mana saja
-alice
-```
-
-### Instalasi (Development)
+### Install & Run
 
 ```bash
 git clone https://github.com/Z-E-D1101/alice-agent.git
 cd alice-agent
-npm install
-cp .env.example .env       # Edit .env sesuai kebutuhan
-
-# Jalankan via CLI (recommended) — start kedua server + buka browser
-alice
-
-# Atau via npm scripts — manual, port default
-npm run dev:all
+./setup.sh
 ```
 
-### Perintah CLI
+Setelah setup selesai, jalankan dari mana saja:
 
 ```bash
-alice                        # Jalankan Alice (buka browser ke localhost:8082)
-alice -p 4000                # Agent server di port 4000 (frontend tetap 8082)
-alice -f 5173                # Frontend di port 5173 (agent tetap 3020)
-alice -p 4000 -f 5173        # Custom kedua port
-alice --no-open              # Tanpa buka browser
-alice --help                 # Lihat bantuan
+alice
 ```
 
-### Config Directory
+### Manual Install
 
-Semua konfigurasi tersimpan di `~/.alice/`:
-
-```
-~/.alice/
-├── config.json              # Konfigurasi agent server
-└── data/                    # Data persisten (threads, memory, skills, dll)
+```bash
+npm install
+npm link
+alice
 ```
 
-Browser-side data (providers, settings) tersimpan di **localStorage** browser dan otomatis persist reload.
+### CLI Options
 
-Aplikasi akan berjalan di **dual-port** architecture:
+```bash
+alice                 # Frontend only (port 8082)
+alice --agent         # Frontend + agent server (port 8082 + 3020)
+alice -p 5173         # Custom port
+alice --no-open       # Tanpa buka browser
+alice --help          # Lihat bantuan
+```
+
+## 🔑 Login & Auth
+
+Alice mendukung login via email/password menggunakan Supabase Auth.
+
+- **Dengan login**: Data tersync per-user ke Supabase, bisa diakses dari device lain dengan akun yang sama
+- **Tanpa login (Skip)**: Data hanya tersimpan di localStorage dan disk lokal
+- **Signup**: Buat akun baru langsung dari halaman login
+
+## 🏗️ Arsitektur
+
+### Mode 1: Frontend Only (Default)
+
+```bash
+alice
+```
+
+| Service | URL | Fungsi |
+|---------|-----|--------|
+| **Frontend (UI)** | http://localhost:8082 | Chat UI, Settings, Threads |
+
+Tool calls (shell, filesystem, code execution) dijalankan via **TanStack Start SSR** (server functions).
+
+### Mode 2: Dual Port (dengan --agent)
+
+```bash
+alice --agent
+```
 
 | Service | URL | Fungsi |
 |---------|-----|--------|
 | **Frontend (UI)** | http://localhost:8082 | Chat UI, Settings, Threads |
 | **Agent Server (API)** | http://localhost:3020 | Backend API (shell, filesystem, code exec) |
 
-Browser otomatis dibuka ke `http://localhost:8082`.
+Diperlukan untuk akses multi-device, process isolation, atau production deployment.
 
-### Konfigurasi (.env)
+## 🔑 Provider & API Keys
+
+API keys dikonfigurasi melalui **Settings UI** dan disimpan di localStorage. Tidak perlu `.env` untuk API keys.
+
+**Default provider: OpenRouter** — registrasi gratis di [openrouter.ai](https://openrouter.ai)
+
+Cara setup:
+1. Buka Alice → Settings → Providers
+2. Pilih provider → masukkan API key
+3. Klik **Discover Models** → pilih model
+
+| Provider | Model Contoh |
+|----------|-------------|
+| **OpenRouter** | `openai/gpt-4o-mini`, `anthropic/claude-3.5-sonnet` |
+| **OpenAI** | `gpt-4o-mini`, `gpt-4o`, `gpt-4.1-mini` |
+| **Anthropic** | `claude-sonnet-4-20250514`, `claude-3-5-sonnet-latest` |
+| **Google Gemini** | `gemini-2.0-flash`, `gemini-2.5-pro` |
+| **Groq** | `llama-3.3-70b-versatile` |
+| **DeepSeek** | `deepseek-chat` |
+| **Together AI** | `meta-llama/Llama-3-70b-chat-hf` |
+| **Cohere** | `command-r-plus` |
+
+## ☁️ Cloud Sync (Supabase)
+
+Cloud sync mengirim semua data (providers, settings, memory, threads, skills, tasks, knowledge) ke Supabase per-user.
+
+### Setup
+
+1. Buat project di [Supabase](https://supabase.com)
+2. Jalankan SQL migration di Supabase SQL Editor (lihat `supabase/migrations/`)
+3. Tambahkan env vars di `.env`:
 
 ```env
-# === Provider AI (pilih salah satu) ===
-OPENAI_API_KEY=sk-...
-OPENROUTER_API_KEY=sk-or-...
-ANTHROPIC_API_KEY=sk-ant-...
-
-# === Agent Server ===
-ALICE_AGENT_PORT=3020
-ALICE_ORIGINS=http://localhost:8082,http://localhost:3020,http://localhost:5173,http://localhost:3000
-
-# === Frontend ===
-VITE_ALICE_AGENT_PORT=3020    # Port agent server untuk frontend
-
-# === Cloud Sync (opsional) ===
 SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_PUBLISHABLE_KEY=eyJ...
+SUPABASE_PUBLISHABLE_KEY=your-anon-key
 VITE_SUPABASE_URL=$SUPABASE_URL
 VITE_SUPABASE_PUBLISHABLE_KEY=$SUPABASE_PUBLISHABLE_KEY
 ```
 
-### Production Build
+4. Buka Alice → Settings → Data → Aktifkan **Cloud Sync**
+5. Login atau signup untuk mulai sync
 
-```bash
-# Build frontend
-npm run build
+### Data yang Disync
 
-# Jalankan agent server
-npm run agent
-# atau
-node --import tsx agent-server.ts
-```
+Providers, Settings, Threads, Memory, Skills, Tasks, Profile, Knowledge — semua otomatis sync setiap ada perubahan.
 
-Agent server berjalan di `http://localhost:3020` dengan health check di `/api/health`.
-
-## 🛠️ Tools yang Tersedia
-
-Alice memiliki 50+ tools yang dikelompokkan menjadi kategori:
+## 🛠️ Tools (56+)
 
 ### Shell & Process
-
-- `run_shell` / `terminal` - Jalankan command shell
-- `execute_python` - Eksekusi kode Python
-- `execute_js` - Eksekusi JavaScript (Node.js)
-- `list_processes` - Lihat proses yang berjalan
-- `get_cwd` - Current working directory
-- `get_env` - Baca environment variable
-- `which` - Cari executable di PATH
+`run_shell`, `execute_python`, `execute_js`, `list_processes`, `get_cwd`, `get_env`, `which`
 
 ### Filesystem
-
-- `read_file`, `write_file`, `append_file`, `delete_file`
-- `list_dir`, `file_exists`, `file_stat`
-- `move_file`, `copy_file`, `make_directory`
-- `search_files`, `glob`, `disk_usage`
-- `head`, `tail`, `tree`, `wc`
+`read_file`, `write_file`, `append_file`, `delete_file`, `list_dir`, `file_exists`, `move_file`, `copy_file`, `make_directory`, `search_files`, `glob`, `disk_usage`
 
 ### Web & HTTP
-
-- `web_search` - SearXNG atau DuckDuckGo
-- `web_search_news` - Search berita
-- `fetch_url`, `fetch_json` - ambil konten web
-- `extract_text` - Strip HTML tags
-- `http_request` - HTTP request dari server
+`web_search`, `web_search_news`, `fetch_url`, `fetch_json`, `extract_text`, `http_request`
 
 ### Memory & Profile
-
-- `remember`, `recall`, `list_memories`, `forget`
-- `update_profile`, `get_profile`
-- `summarize`
+`remember`, `recall`, `list_memories`, `forget`, `update_profile`, `get_profile`
 
 ### Skills & Tasks
-
-- `save_skill`, `list_skills`, `run_skill`, `delete_skill`, `export_skill`, `import_skill`
-- `create_task`, `list_tasks`, `cancel_task`, `run_task_now`
+`save_skill`, `list_skills`, `run_skill`, `delete_skill`, `create_task`, `list_tasks`, `cancel_task`
 
 ### Utilities
+`calculate`, `get_time`, `generate_uuid`
 
-- `calculate` - Evaluasi ekspresi matematika
-- `get_time` - Waktu saat ini
-- `generate_uuid`
-
-## 🏗️ Project Structure
+## 📁 Project Structure
 
 ```
-src/
-├── lib/
-│   └── alice/
-│       ├── agent.ts       # Core agent loop (runAgent)
-│       ├── agent-backend.ts # Backend API client
-│       ├── tools.ts       # 50+ tool definitions
-│       ├── types.ts       # TypeScript interfaces
-│       ├── storage.ts     # localStorage persistence
-│       ├── cloudSync.ts   # Supabase sync
-│       ├── scheduler.ts   # Task scheduler
-│       └── vfs.ts         # Virtual filesystem fallback
-├── routes/
-│   ├── __root.tsx         # App shell
-│   └── index.tsx          # Main chat page
-├── components/
-│   └── alice/             # UI components
-├── integrations/
-│   └── supabase/          # Supabase client
+alice-agent/
+├── alice-cli.js              # CLI entry point (jalankan: alice)
+├── setup.sh                  # One-command setup script
+├── agent-server.ts           # Agent HTTP server (opsional)
+├── src/
+│   ├── lib/alice/
+│   │   ├── agent.ts          # Core agent loop
+│   │   ├── storage.ts        # localStorage + disk persistence
+│   │   ├── cloudSync.ts      # Per-user Supabase cloud sync
+│   │   ├── auth.ts           # Supabase Auth wrapper
+│   │   ├── tools.ts          # 56+ tool definitions
+│   │   └── ...
+│   ├── routes/index.tsx      # Main chat page + auth gate
+│   ├── components/alice/     # UI components
+│   │   ├── AuthPage.tsx      # Login/signup page
+│   │   ├── Sidebar.tsx       # Navigation + thread list
+│   │   └── ...
+│   └── integrations/supabase/
+├── supabase/migrations/      # Database migrations (per-user RLS)
+├── public/                   # PWA assets
+└── tests/                    # Unit tests
 ```
 
-## 🔧 Backend API (agent-server.ts)
+## 🔒 Security
 
-Agent server menyediakan endpoints untuk tools:
+- **API keys** — Disimpan di localStorage, tidak di `.env` atau source code
+- **Per-user data isolation** — Supabase RLS policies memastikan user hanya bisa akses data sendiri
+- **Path traversal protection** — File operations hanya diizinkan dalam direktori yang aman
+- **Service Worker** — Tidak cache HTML, hanya static assets (JS/CSS/images)
 
-- `POST /api/shell/run` - Execute shell command
-- `POST /api/shell/exec` - Alias untuk run
-- `POST /api/shell/spawn` - Spawn long-running process
-- `GET /api/shell/processes` - List processes
-- `POST /api/fs/read`, `/write`, `/append`, `/delete`, `/list`, `/exists`, `/stat`, `/move`, `/copy`, `/mkdir`, `/grep`, `/glob`, `/disk-usage`
-- `POST /api/code/python`, `/node`, `/bash`
-- `GET /api/system/info`, `/network`
-- `POST /api/system/dns`, `/env`, `/cwd`
-- `POST /api/http/fetch` - HTTP proxy (bypass CORS)
-- `GET /api/health` - Health check
-
-Semua endpoint butuh authentication via header (bisa dikonfigurasi).
-
-## 🔒 Security Notes
-
-⚠️ **Agent server berjalan dengan权限 sistem** - bisa baca/tulis/menghapus file apa pun, jalankan shell, dll.  
-⚠️ Hanya gunakan di environment development atau dengan firewall yang ketat.  
-⚠️ Pastikan `ALICE_ORIGINS` hanya mengizinkan origin yang dipercaya.
-
-## ☁️ Cloud Sync (Supabase)
-
-1. Buat project Supabase
-2. Jalankan migration:
-
-```bash
-supabase db push
-```
-
-3. Atau manual:
-
-```sql
-CREATE TABLE public.app_state (
-  id text PRIMARY KEY DEFAULT 'default',
-  data jsonb NOT NULL DEFAULT '{}'::jsonb,
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
--- + RLS policies
-```
-
-Data yang disimpan: threads, memory, skills, tasks, profile, providers, settings, active thread.
-
-## 📦 API Providers
-
-### OpenAI
-
-```json
-{
-  "id": "openai",
-  "name": "OpenAI",
-  "baseUrl": "https://api.openai.com/v1",
-  "apiKey": "sk-...",
-  "models": ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini"]
-}
-```
-
-### OpenRouter
-
-```json
-{
-  "id": "openrouter",
-  "name": "OpenRouter",
-  "baseUrl": "https://openrouter.ai/api/v1",
-  "apiKey": "sk-or-...",
-  "models": ["openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet", "google/gemini-2.0-flash-001"]
-}
-```
-
-### Anthropic (direct)
-
-```json
-{
-  "id": "anthropic",
-  "name": "Anthropic",
-  "baseUrl": "https://api.anthropic.com/v1",
-  "apiKey": "sk-ant-...",
-  "models": ["claude-3-5-sonnet-latest"]
-}
-```
-
-### Custom Provider
-
-Tambahkan config custom melalui UI Settings.
-
-## 🔍 Web Search
-
-Alice menggunakan SearXNG sebagai search engine utama. Start dengan Docker:
-
-```bash
-docker run -d -p 8080:8080 searxng/searxng
-```
-
-Jika SearXNG tidak tersedia, fallback ke DuckDuckGo (lebih terbatas).
-
-Atau set `searxngUrl` kosong di Settings untuk nonaktifkan.
-
-## 📖 System Prompt Default
-
-Alice adalah AI yang:
-
-- Selalu gunakan tools ketika membantu
-- Simpan fakta dengan `remember()`
-- Ciptakan `save_skill()` setelah tugas kompleks
-- Tanya pengguna jika kurang jelas
-- Ramah, singkat, dan ingin tahu
-
-Customizable di Settings.
+⚠️ Agent server berjalan dengan permission sistem. Hanya gunakan di development environment.
 
 ## 🧰 Development
 
-### Scripts
-
 ```bash
-# Via CLI (recommended) — start agent server (3020) + frontend (8082) + buka browser
-alice
-alice -p 4000 -f 5173  # Custom ports
+# CLI
+alice                       # Frontend only
+alice --agent               # Frontend + agent server
 
-# Via npm scripts
-npm run dev          # Frontend only (Vite dev server)
-npm run dev:agent    # Agent backend only (port 3020)
-npm run dev:all      # Frontend + Agent server (parallel)
+# npm scripts
+npm run dev          # Frontend only
+npm run dev:agent    # Agent backend only
+npm run dev:all      # Frontend + Agent server
 npm run build        # Build production
 npm run lint         # ESLint
-npm run format       # Prettier
+npm run test         # Vitest
 ```
 
-### Architecture
+### Environment Variables
 
-```
-┌─────────────────────────────────────────────────────┐
-│  alice CLI (alice-cli.js)                           │
-│                                                     │
-│  ┌──────────────┐     ┌──────────────────────────┐ │
-│  │ Frontend      │     │ Agent Server              │ │
-│  │ (Vite/React)  │     │ (Node.js HTTP API)        │ │
-│  │ Port 8082     │────▶│ Port 3020                  │ │
-│  └──────┬───────┘     └──────────┬───────────────┘ │
-│         │                        │                  │
-│         │  HTTP API calls        │  Shell/Filesystem │
-│         ▼                        ▼                  │
-│  ┌──────────┐            ┌──────────────┐           │
-│  │ Browser   │            │ AI Providers  │           │
-│  │ (UI)      │            │ OpenAI, etc.  │           │
-│  └──────────┘            └──────────────┘           │
-│         │                        │                  │
-│         └──── localStorage ──────┘                  │
-│              + Cloud Sync (Supabase)                │
-└─────────────────────────────────────────────────────┘
-```
+```env
+# Cloud Sync (opsional)
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_PUBLISHABLE_KEY=your-anon-key
+VITE_SUPABASE_URL=$SUPABASE_URL
+VITE_SUPABASE_PUBLISHABLE_KEY=$SUPABASE_PUBLISHABLE_KEY
 
-Agent loop:
-1. Build context (profile, memory, skills)
-2. Call LLM dengan tools
-3. Stream response & tool calls
-4. Execute tools sequential
-5. Loop hingga finish atau max steps
-
-## 📁 File Structure
-
-```
-public/images/           # Static assets (avatar, etc.)
-src/
-├── lib/alice/           # Core logic
-│   ├── agent.ts         # Agent loop (runAgent)
-│   ├── agent-backend.ts # Backend API client
-│   ├── tools.ts         # 56+ tool definitions
-│   ├── types.ts         # TypeScript interfaces
-│   ├── storage.ts       # localStorage persistence
-│   ├── cloudSync.ts     # Supabase sync
-│   ├── scheduler.ts     # Task scheduler
-│   └── vfs.ts           # Virtual filesystem
-├── routes/              # TanStack routes
-├── components/alice/    # UI components
-└── integrations/supabase/
-agent-server.ts          # Backend HTTP server
+# Agent Server (opsional, dengan --agent)
+ALICE_AGENT_PORT=3020
+ALICE_ORIGINS=http://localhost:8082,http://localhost:3020
 ```
 
 ## 🗑️ Uninstall
 
-### Hapus command global
-
 ```bash
-npm unlink -g alice        # Jika install via npm link
-# atau
-npm uninstall -g alice     # Jika install via npm install -g
+npm unlink -g alice          # Hapus command global
+rm -rf ~/.alice              # Hapus data persisten
 ```
-
-### Hapus data dan konfigurasi
-
-```bash
-rm -rf ~/.alice             # Hapus semua data persisten (threads, memory, skills, dll)
-```
-
-### Hapus project
-
-```bash
-rm -rf /path/to/alice-agent         # Hapus folder project
-npm cache clean --force              # Bersihkan npm cache (opsional)
-```
-
-### Hapus environment
-
-Hapus `.env` file di folder project jika ada:
-
-```bash
-rm /path/to/alice-agent/.env
-```
-
-> ⚠️ **Note:** Menghapus `~/.alice/` akan menghapus semua data persisten Alice (threads, memory, skills, tasks, providers, settings). Pastikan sudah backup jika diperlukan.
 
 ## 📝 License
 
 MIT
-
-## 🐛 Issues & Contributing
-
-Report issues di GitHub. Contributions welcome!
 
 ---
 
